@@ -10,14 +10,14 @@ import type {
   SummaryResponse,
   PdfResponse,
   NarrateResponse,
-  SpeakerRole,
+  UrgencyResponse,
   Provider,
   Encounter,
   TranscriptChunk,
   ExtractedFields,
 } from "./types";
 
-const FUNCTIONS_URL = process.env.NEXT_PUBLIC_SUPABASE_URL + "/functions/v1";
+const FUNCTIONS_URL = "/api/supabase";
 
 /**
  * Call a Supabase Edge Function
@@ -30,13 +30,14 @@ async function callFunction<T>(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`,
     },
     body: JSON.stringify(body),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: "Unknown error" }));
+    const error = await response
+      .json()
+      .catch(() => ({ error: "Unknown error" }));
     throw new Error(error.error || `Function ${functionName} failed`);
   }
 
@@ -48,28 +49,31 @@ async function callFunction<T>(
  */
 export async function startEncounter(
   patientName?: string,
-  reasonForVisit?: string
+  reasonForVisit?: string,
+  patientId?: string,
+  createdBy?: string
 ): Promise<StartEncounterResponse> {
   return callFunction<StartEncounterResponse>("start-encounter", {
     patient_name: patientName,
     reason_for_visit: reasonForVisit,
+    patient_id: patientId,
+    created_by: createdBy,
   });
 }
 
 /**
- * Add a transcript chunk
+ * Add a transcript chunk - AI auto-detects speaker
  */
 export async function upsertTranscript(
   encounterId: string,
-  speaker: SpeakerRole,
   text: string,
   timestamp?: number
-): Promise<{ id: string; success: boolean }> {
+): Promise<{ id: string; success: boolean; speaker: string; text: string }> {
   return callFunction("upsert-transcript", {
     encounterId,
-    speaker,
     text,
     timestamp,
+    autoDetectSpeaker: true,
   });
 }
 
@@ -91,7 +95,6 @@ export async function updateFields(
   encounterId: string,
   fields: ExtractedFields
 ): Promise<{ success: boolean }> {
-  // Update the artifact directly in Supabase
   const { error } = await supabase
     .from("artifacts")
     .update({ content: fields })
@@ -101,7 +104,6 @@ export async function updateFields(
     .limit(1);
 
   if (error) {
-    // If no existing artifact, create one
     const { error: insertError } = await supabase
       .from("artifacts")
       .insert({
@@ -115,17 +117,13 @@ export async function updateFields(
     }
   }
 
-  // Also update encounter with patient info
   const updates: Record<string, unknown> = {};
   if (fields.patient_name) updates.patient_name = fields.patient_name;
   if (fields.dob) updates.patient_dob = fields.dob;
   if (fields.reason_for_visit) updates.reason_for_visit = fields.reason_for_visit;
 
   if (Object.keys(updates).length > 0) {
-    await supabase
-      .from("encounters")
-      .update(updates)
-      .eq("id", encounterId);
+    await supabase.from("encounters").update(updates).eq("id", encounterId);
   }
 
   return { success: true };
@@ -210,6 +208,17 @@ export async function narrateExplanation(
 }
 
 /**
+ * Assess urgency of encounter
+ */
+export async function assessUrgency(
+  encounterId: string
+): Promise<UrgencyResponse> {
+  return callFunction<UrgencyResponse>("assess-urgency", {
+    encounterId,
+  });
+}
+
+/**
  * Log trace event
  */
 export async function logTrace(
@@ -225,12 +234,9 @@ export async function logTrace(
 }
 
 // ===========================================
-// Direct Supabase queries (for real-time data)
+// Direct Supabase queries
 // ===========================================
 
-/**
- * Get encounter by ID
- */
 export async function getEncounter(encounterId: string): Promise<Encounter | null> {
   const { data, error } = await supabase
     .from("encounters")
@@ -246,12 +252,7 @@ export async function getEncounter(encounterId: string): Promise<Encounter | nul
   return data;
 }
 
-/**
- * Get transcript chunks for encounter
- */
-export async function getTranscript(
-  encounterId: string
-): Promise<TranscriptChunk[]> {
+export async function getTranscript(encounterId: string): Promise<TranscriptChunk[]> {
   const { data, error } = await supabase
     .from("transcript_chunks")
     .select("*")
@@ -266,9 +267,6 @@ export async function getTranscript(
   return data || [];
 }
 
-/**
- * Get extracted fields for encounter
- */
 export async function getFields(encounterId: string): Promise<ExtractedFields | null> {
   const { data, error } = await supabase
     .from("artifacts")
@@ -279,16 +277,10 @@ export async function getFields(encounterId: string): Promise<ExtractedFields | 
     .limit(1)
     .single();
 
-  if (error) {
-    return null;
-  }
-
+  if (error) return null;
   return data?.content as ExtractedFields;
 }
 
-/**
- * Subscribe to transcript updates
- */
 export function subscribeToTranscript(
   encounterId: string,
   callback: (chunk: TranscriptChunk) => void
@@ -314,9 +306,6 @@ export function subscribeToTranscript(
   };
 }
 
-/**
- * Subscribe to encounter updates
- */
 export function subscribeToEncounter(
   encounterId: string,
   callback: (encounter: Encounter) => void

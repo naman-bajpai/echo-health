@@ -3,117 +3,203 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 250, 250, 250;
-  --background-end-rgb: 245, 245, 245;
+  --foreground: 30 41 59;
+  --background: 254 253 251;
+  --primary: 20 184 166;
+  --accent: 249 115 22;
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-start-rgb));
-  min-height: 100vh;
-  font-feature-settings: "cv11", "ss01";
-  font-variation-settings: "opsz" 32;
+@layer base {
+  body {
+    @apply text-ink-800 bg-surface-50 antialiased;
+    font-feature-settings: "cv11", "ss01", "ss03";
+    font-variation-settings: "opsz" 32;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  /* Softer selection color */
+  ::selection {
+    @apply bg-primary-200 text-primary-900;
+  }
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - minimal and elegant */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+  @apply bg-ink-200 rounded-full;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  @apply bg-ink-300;
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
-}
-
-/* Focus styles */
+/* Focus styles - teal glow */
 *:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: 2px;
+  @apply outline-none ring-2 ring-primary-400 ring-offset-2 ring-offset-surface-50;
 }
 
-/* Button styles */
-.btn-primary {
-  @apply bg-gradient-to-r from-primary-600 to-primary-700 text-white px-5 py-2.5 rounded-xl font-medium
-         hover:from-primary-700 hover:to-primary-800 
-         focus:outline-none focus:ring-4 focus:ring-primary-500/30
-         disabled:opacity-50 disabled:cursor-not-allowed
-         transition-all duration-200 shadow-lg shadow-primary-600/20;
+@layer components {
+  /* Primary button - teal with organic shape */
+  .btn-primary {
+    @apply relative inline-flex items-center justify-center gap-2
+           bg-primary-600 text-white px-6 py-3 rounded-2xl font-semibold
+           hover:bg-primary-700 
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-300 ease-out
+           shadow-soft hover:shadow-soft-lg hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-soft;
+  }
+
+  /* Secondary button - outlined with warm feel */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-white text-ink-700 px-6 py-3 rounded-2xl font-semibold
+           border-2 border-ink-200
+           hover:border-primary-300 hover:text-primary-700 hover:bg-primary-50
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-300 ease-out;
+  }
+
+  /* Success button - sage green */
+  .btn-success {
+    @apply inline-flex items-center justify-center gap-2
+           bg-sage-500 text-white px-6 py-3 rounded-2xl font-semibold
+           hover:bg-sage-600
+           focus:outline-none focus:ring-2 focus:ring-sage-400 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-300 ease-out
+           shadow-soft hover:shadow-soft-lg;
+  }
+
+  /* Accent button - coral/orange for CTAs */
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2
+           bg-accent-500 text-white px-6 py-3 rounded-2xl font-semibold
+           hover:bg-accent-600
+           focus:outline-none focus:ring-2 focus:ring-accent-400 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-300 ease-out
+           shadow-soft hover:shadow-soft-lg hover:shadow-glow-accent;
+  }
+
+  /* Ghost button */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2
+           text-ink-600 px-4 py-2 rounded-xl font-medium
+           hover:bg-ink-100 hover:text-ink-800
+           focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-all duration-200;
+  }
+
+  /* Card - elevated with warm shadow */
+  .card {
+    @apply bg-white rounded-3xl shadow-soft border border-surface-300/50
+           transition-all duration-300
+           hover:shadow-soft-lg;
+  }
+
+  .card-flat {
+    @apply bg-white rounded-3xl border border-surface-300;
+  }
+
+  /* Input styles - clean and minimal */
+  .input {
+    @apply w-full px-4 py-3 rounded-2xl
+           bg-white border-2 border-ink-200
+           focus:border-primary-400 focus:ring-4 focus:ring-primary-100 outline-none
+           transition-all duration-200
+           placeholder-ink-400 text-ink-800;
+  }
+
+  .input-minimal {
+    @apply w-full px-4 py-3 rounded-2xl
+           bg-surface-100 border-2 border-transparent
+           focus:bg-white focus:border-primary-400 focus:ring-4 focus:ring-primary-100 outline-none
+           transition-all duration-200
+           placeholder-ink-400 text-ink-800;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold tracking-wide;
+  }
+
+  .badge-primary {
+    @apply bg-primary-100 text-primary-700;
+  }
+
+  .badge-accent {
+    @apply bg-accent-100 text-accent-700;
+  }
+
+  .badge-sage {
+    @apply bg-sage-100 text-sage-700;
+  }
+
+  .badge-warning {
+    @apply bg-amber-100 text-amber-700;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-700;
+  }
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/70 backdrop-blur-xl border border-white/20;
+  }
+
+  /* Section container */
+  .section {
+    @apply bg-surface-100/50 rounded-3xl p-6 border border-surface-300/50;
+  }
+
+  /* Panel card with colored left border */
+  .panel-card {
+    @apply bg-white rounded-2xl p-5 border-l-4 shadow-soft;
+  }
+
+  .panel-card-primary {
+    @apply panel-card border-l-primary-500 bg-gradient-to-r from-primary-50/50 to-white;
+  }
+
+  .panel-card-accent {
+    @apply panel-card border-l-accent-500 bg-gradient-to-r from-accent-50/50 to-white;
+  }
+
+  .panel-card-sage {
+    @apply panel-card border-l-sage-500 bg-gradient-to-r from-sage-50/50 to-white;
+  }
 }
 
-.btn-secondary {
-  @apply bg-white text-gray-700 px-5 py-2.5 rounded-xl font-medium
-         border-2 border-gray-200
-         hover:bg-gray-50 hover:border-gray-300
-         focus:outline-none focus:ring-4 focus:ring-gray-500/10
-         disabled:opacity-50 disabled:cursor-not-allowed
-         transition-all duration-200;
-}
-
-.btn-success {
-  @apply bg-gradient-to-r from-emerald-500 to-emerald-600 text-white px-5 py-2.5 rounded-xl font-medium
-         hover:from-emerald-600 hover:to-emerald-700
-         focus:outline-none focus:ring-4 focus:ring-emerald-500/30
-         disabled:opacity-50 disabled:cursor-not-allowed
-         transition-all duration-200 shadow-lg shadow-emerald-500/20;
-}
-
-/* Card styles */
-.card {
-  @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-6 transition-all duration-200
-         hover:shadow-md hover:border-gray-200;
-}
-
-/* Input styles */
-.input {
-  @apply w-full px-4 py-3 rounded-xl border-2 border-gray-200
-         focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 outline-none
-         transition-all duration-200
-         placeholder-gray-400 text-gray-800;
-}
-
-/* Badge styles */
-.badge {
-  @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide;
-}
-
-/* Glass effect */
-.glass {
-  @apply bg-white/80 backdrop-blur-lg;
-}
-
-/* Loading animation */
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-.loading {
-  animation: pulse-soft 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Shimmer effect */
+/* Loading shimmer */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 
 .shimmer {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, 
+    theme('colors.surface.200') 25%, 
+    theme('colors.surface.100') 50%, 
+    theme('colors.surface.200') 75%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -129,9 +215,9 @@ html {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%) rotate(-30deg);
-  font-size: 5rem;
+  font-size: 4rem;
   font-weight: 800;
-  color: rgba(239, 68, 68, 0.06);
+  color: rgba(249, 115, 22, 0.05);
   pointer-events: none;
   z-index: 0;
   letter-spacing: 0.2em;
@@ -142,24 +228,78 @@ html {
   @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-800;
 }
 
-/* Floating animation */
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+.gradient-text-accent {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-500 to-accent-700;
 }
 
-.float {
-  animation: float 3s ease-in-out infinite;
+/* Organic blob shape */
+.blob {
+  border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
+}
+
+/* Subtle mesh background pattern */
+.bg-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e8dcc9' fill-opacity='0.2'%3E%3Ccircle cx='30' cy='30' r='2'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Decorative ring */
+.ring-decorative {
+  @apply absolute rounded-full border-2 border-primary-200/30 pointer-events-none;
+}
+
+/* Stat card hover effect */
+.stat-card {
+  @apply relative overflow-hidden;
+}
+
+.stat-card::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-br from-primary-500/5 to-transparent opacity-0 transition-opacity duration-300;
+}
+
+.stat-card:hover::before {
+  @apply opacity-100;
+}
+
+/* Recording pulse */
+@keyframes recording-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+}
+
+.recording-pulse {
+  animation: recording-pulse 2s ease-in-out infinite;
 }
 
 /* Page transitions */
 .page-enter {
-  opacity: 0;
-  transform: translateY(10px);
+  @apply opacity-0 translate-y-2;
 }
 
 .page-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 300ms, transform 300ms;
+  @apply opacity-100 translate-y-0 transition-all duration-300 ease-out;
+}
+
+/* Tooltip style */
+.tooltip {
+  @apply absolute z-50 px-3 py-2 text-sm font-medium text-white bg-ink-800 rounded-xl shadow-lg
+         opacity-0 invisible transition-all duration-200
+         group-hover:opacity-100 group-hover:visible;
+}
+
+/* Healthcare-specific color schemes for urgency */
+.urgency-routine {
+  @apply bg-sage-50 border-sage-200 text-sage-700;
+}
+
+.urgency-urgent {
+  @apply bg-amber-50 border-amber-200 text-amber-700;
+}
+
+.urgency-emergent {
+  @apply bg-red-50 border-red-200 text-red-700;
 }

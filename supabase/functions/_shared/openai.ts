@@ -1,5 +1,5 @@
 // OpenAI Integration
-// LLM calls for field extraction, summarization, etc.
+// Used for cleaning transcriptions and detecting speakers
 
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const OPENAI_API_URL = "https://api.openai.com/v1";
@@ -35,7 +35,6 @@ export async function chatCompletion(
     model?: string;
     temperature?: number;
     maxTokens?: number;
-    responseFormat?: "text" | "json_object";
   } = {}
 ): Promise<{ content: string; usage: ChatCompletionResponse["usage"] }> {
   if (!OPENAI_API_KEY) {
@@ -43,22 +42,10 @@ export async function chatCompletion(
   }
 
   const {
-    model = "gpt-4-turbo-preview",
-    temperature = 0.3,
-    maxTokens = 2000,
-    responseFormat = "text",
+    model = "gpt-4o-mini",
+    temperature = 0.1,
+    maxTokens = 500,
   } = options;
-
-  const body: Record<string, unknown> = {
-    model,
-    messages,
-    temperature,
-    max_tokens: maxTokens,
-  };
-
-  if (responseFormat === "json_object") {
-    body.response_format = { type: "json_object" };
-  }
 
   const response = await fetch(`${OPENAI_API_URL}/chat/completions`, {
     method: "POST",
@@ -66,7 +53,12 @@ export async function chatCompletion(
       "Content-Type": "application/json",
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+    }),
   });
 
   if (!response.ok) {
@@ -83,45 +75,116 @@ export async function chatCompletion(
   };
 }
 
-/**
- * Simple completion helper
- */
-export async function complete(
-  systemPrompt: string,
-  userPrompt: string,
-  options?: Parameters<typeof chatCompletion>[1]
-): Promise<string> {
-  const result = await chatCompletion(
-    [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    options
-  );
-  return result.content;
+interface ProcessedTranscript {
+  speaker: "staff" | "patient" | "clinician";
+  text: string;
+  isQuestion: boolean;
 }
 
 /**
- * JSON completion helper
+ * Process transcription - detect speaker and clean text
+ * Analyzes if it's a question (staff) or answer (patient)
  */
-export async function completeJson<T>(
-  systemPrompt: string,
-  userPrompt: string,
-  options?: Omit<Parameters<typeof chatCompletion>[1], "responseFormat">
-): Promise<T> {
-  const result = await chatCompletion(
-    [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    { ...options, responseFormat: "json_object" }
-  );
+export async function processTranscription(
+  rawText: string,
+  conversationContext: string = ""
+): Promise<ProcessedTranscript> {
+  if (!OPENAI_API_KEY) {
+    // Fallback: basic detection without AI
+    return basicSpeakerDetection(rawText);
+  }
 
   try {
-    return JSON.parse(result.content) as T;
-  } catch {
-    throw new Error(`Failed to parse JSON response: ${result.content}`);
+    const result = await chatCompletion([
+      {
+        role: "system",
+        content: `You are analyzing a healthcare conversation transcript. Your job is to:
+1. Detect who is speaking: "staff" (asking questions, giving instructions) or "patient" (answering questions, describing symptoms)
+2. Clean up the text (remove filler words like um, uh, like)
+3. Determine if it's a question or answer
+
+Rules for speaker detection:
+- Questions about symptoms, medical history, medications = STAFF
+- Answers describing how they feel, symptoms, personal info = PATIENT
+- Instructions, explanations about procedures = STAFF
+- Confirmations like "yes", "no", descriptions of pain = PATIENT
+- Greetings can be either, but in medical context staff usually initiates
+
+Respond in JSON format only:
+{"speaker": "staff" or "patient", "text": "cleaned text", "isQuestion": true/false}`
+      },
+      {
+        role: "user",
+        content: `Previous context: ${conversationContext || "Start of conversation"}
+
+New speech to analyze: "${rawText}"
+
+Respond with JSON only.`
+      }
+    ], {
+      model: "gpt-4o-mini",
+      temperature: 0.1,
+      maxTokens: 300,
+    });
+
+    // Parse JSON response
+    let parsed: ProcessedTranscript;
+    try {
+      const jsonStr = result.content.trim().replace(/```json\n?|\n?```/g, '');
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      // If JSON parsing fails, use basic detection
+      return basicSpeakerDetection(rawText);
+    }
+
+    // Validate speaker
+    if (!["staff", "patient", "clinician"].includes(parsed.speaker)) {
+      parsed.speaker = "staff";
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error("OpenAI processing error:", error);
+    return basicSpeakerDetection(rawText);
   }
+}
+
+/**
+ * Basic speaker detection without AI
+ */
+function basicSpeakerDetection(text: string): ProcessedTranscript {
+  const lowerText = text.toLowerCase();
+  
+  // Question indicators (likely staff)
+  const questionPatterns = [
+    /^(what|when|where|why|how|do you|are you|can you|have you|is there|did you)/i,
+    /\?$/,
+    /tell me about/i,
+    /describe/i,
+    /any (pain|symptoms|allergies|medications)/i,
+  ];
+  
+  // Answer/patient indicators
+  const answerPatterns = [
+    /^(yes|no|yeah|nope|i have|i feel|i am|i've been|it hurts|my)/i,
+    /\b(hurts|pain|ache|feeling|felt|started|days ago|weeks ago)\b/i,
+    /\b(taking|medication|allergic)\b/i,
+  ];
+  
+  const isQuestion = questionPatterns.some(p => p.test(lowerText));
+  const isAnswer = answerPatterns.some(p => p.test(lowerText));
+  
+  // Clean text
+  const cleanedText = text
+    .replace(/\b(um|uh|er|ah|like|you know|basically|actually|literally)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    speaker: isQuestion && !isAnswer ? "staff" : isAnswer ? "patient" : "staff",
+    text: cleanedText,
+    isQuestion,
+  };
 }
 
 /**

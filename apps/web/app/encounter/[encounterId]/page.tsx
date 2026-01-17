@@ -24,6 +24,7 @@ import {
   getSummaryPdfUrl,
   narrateExplanation,
   updateFields,
+  assessUrgency,
 } from "@/lib/api";
 import type {
   Encounter,
@@ -33,9 +34,9 @@ import type {
   Provider,
   PatientSummary,
   PanelMode,
-  SpeakerRole,
+  UrgencyAssessment,
 } from "@/lib/types";
-import { Loader2, Activity } from "lucide-react";
+import { Loader2, HeartPulse, AlertTriangle, Stethoscope, Zap } from "lucide-react";
 import Link from "next/link";
 
 export default function EncounterPage() {
@@ -56,11 +57,12 @@ export default function EncounterPage() {
     }>
   >([]);
   const [summary, setSummary] = useState<PatientSummary | null>(null);
-  const [livekitToken, setLivekitToken] = useState<string | null>(null);
+  const [urgencyAssessment, setUrgencyAssessment] =
+    useState<UrgencyAssessment | null>(null);
 
   const [currentMode, setCurrentMode] = useState<PanelMode>("transcript");
-  const [currentSpeaker, setCurrentSpeaker] = useState<SpeakerRole>("staff");
   const [isLoading, setIsLoading] = useState(true);
+  const [isAssessing, setIsAssessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load initial data
@@ -82,12 +84,6 @@ export default function EncounterPage() {
 
         setEncounter(encounterData);
         setTranscript(transcriptData);
-        
-        // Get LiveKit token if room exists
-        if (encounterData.livekit_room_name) {
-          // Token would be fetched from start-encounter, stored in session/state
-          // For now, we'll use browser STT as fallback
-        }
       } catch (err) {
         console.error("Error loading encounter:", err);
         setError("Failed to load encounter");
@@ -104,7 +100,10 @@ export default function EncounterPage() {
     if (!encounterId) return;
 
     const unsubTranscript = subscribeToTranscript(encounterId, (chunk) => {
-      setTranscript((prev) => [...prev, chunk]);
+      setTranscript((prev) => {
+        if (prev.some((t) => t.id === chunk.id)) return prev;
+        return [...prev, chunk];
+      });
     });
 
     const unsubEncounter = subscribeToEncounter(encounterId, (updated) => {
@@ -121,13 +120,29 @@ export default function EncounterPage() {
   const handleAddTranscript = useCallback(
     async (text: string) => {
       try {
-        await upsertTranscript(encounterId, currentSpeaker, text);
+        const result = await upsertTranscript(encounterId, text);
+        return result;
       } catch (err) {
         console.error("Failed to add transcript:", err);
+        throw err;
       }
     },
-    [encounterId, currentSpeaker]
+    [encounterId]
   );
+
+  const handleAssessUrgency = useCallback(async () => {
+    setIsAssessing(true);
+    try {
+      const result = await assessUrgency(encounterId);
+      setUrgencyAssessment(result.assessment);
+      const updated = await getEncounter(encounterId);
+      if (updated) setEncounter(updated);
+    } catch (err) {
+      console.error("Failed to assess urgency:", err);
+    } finally {
+      setIsAssessing(false);
+    }
+  }, [encounterId]);
 
   const handleExtractFields = useCallback(async () => {
     try {
@@ -188,7 +203,6 @@ export default function EncounterPage() {
     try {
       const result = await generateSummary(encounterId);
       setSummary(result.summary);
-      // Refresh encounter to get updated status
       const updated = await getEncounter(encounterId);
       if (updated) setEncounter(updated);
     } catch (err) {
@@ -226,12 +240,13 @@ export default function EncounterPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+      <div className="flex-1 flex items-center justify-center bg-surface-50 min-h-screen">
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-2xl mb-4">
-            <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+          <div className="w-20 h-20 bg-primary-100 rounded-3xl flex items-center justify-center mx-auto mb-5 animate-pulse">
+            <HeartPulse className="w-10 h-10 text-primary-600" />
           </div>
-          <p className="text-gray-600 font-medium">Loading encounter...</p>
+          <p className="text-ink-600 font-medium text-lg">Loading encounter...</p>
+          <p className="text-ink-400 text-sm mt-1">Preparing your workspace</p>
         </div>
       </div>
     );
@@ -240,19 +255,19 @@ export default function EncounterPage() {
   // Error state
   if (error || !encounter) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
-        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-2xl mb-4">
-            <Activity className="w-8 h-8 text-red-600" />
+      <div className="flex-1 flex items-center justify-center bg-surface-50 min-h-screen">
+        <div className="text-center card p-10 max-w-md mx-4">
+          <div className="w-20 h-20 bg-red-100 rounded-3xl flex items-center justify-center mx-auto mb-5">
+            <AlertTriangle className="w-10 h-10 text-red-500" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
+          <h2 className="text-2xl font-bold text-ink-800 mb-3">
             {error || "Encounter not found"}
           </h2>
-          <p className="text-gray-500 mb-6">
+          <p className="text-ink-500 mb-8">
             The encounter you're looking for doesn't exist or has been removed.
           </p>
-          <Link href="/" className="btn-primary inline-flex items-center gap-2">
-            Go Home
+          <Link href="/dashboard" className="btn-primary">
+            Go to Dashboard
           </Link>
         </div>
       </div>
@@ -266,11 +281,7 @@ export default function EncounterPage() {
         return (
           <TranscriptPanel
             transcript={transcript}
-            currentSpeaker={currentSpeaker}
-            onSpeakerChange={setCurrentSpeaker}
             onAddTranscript={handleAddTranscript}
-            livekitToken={livekitToken}
-            roomName={encounter.livekit_room_name}
           />
         );
       case "fields":
@@ -295,6 +306,7 @@ export default function EncounterPage() {
             referrals={referrals}
             onSearch={handleSearchReferrals}
             onApprove={handleApproveReferral}
+            recommendedSpecialist={encounter.recommended_specialist}
           />
         );
       case "summary":
@@ -310,29 +322,124 @@ export default function EncounterPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen bg-gray-50">
+    <div className="flex-1 flex flex-col h-screen bg-surface-50">
       <EncounterHeader encounter={encounter} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Safety Banner & Mode Switcher */}
-        <div className="bg-white border-b border-gray-100 px-6 py-4">
+        {/* Safety Banner, Assess Button & Mode Switcher */}
+        <div className="bg-white border-b border-surface-200 px-6 py-4">
           <div className="max-w-screen-2xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <SafetyBanner
-              status={encounter.status}
-              showDraftWarning={currentMode === "note"}
-            />
-            <ModeSwitcher
-              currentMode={currentMode}
-              onModeChange={setCurrentMode}
-            />
+            <div className="flex items-center gap-4">
+              <SafetyBanner
+                status={encounter.status}
+                showDraftWarning={currentMode === "note"}
+              />
+
+              {/* Assess Urgency Button */}
+              {transcript.length >= 2 && (
+                <button
+                  onClick={handleAssessUrgency}
+                  disabled={isAssessing}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                    isAssessing
+                      ? "bg-surface-100 text-ink-400 cursor-wait"
+                      : "bg-gradient-to-r from-accent-500 to-accent-600 text-white shadow-soft hover:shadow-glow-accent"
+                  }`}
+                >
+                  {isAssessing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Assessing...
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      Assess Urgency
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            <ModeSwitcher currentMode={currentMode} onModeChange={setCurrentMode} />
           </div>
         </div>
 
+        {/* Urgency Assessment Card (if assessed) */}
+        {urgencyAssessment && urgencyAssessment.red_flags.length > 0 && (
+          <div
+            className={`px-6 py-4 border-b ${
+              urgencyAssessment.level === "emergent"
+                ? "bg-red-50 border-red-100"
+                : urgencyAssessment.level === "urgent"
+                ? "bg-amber-50 border-amber-100"
+                : "bg-sage-50 border-sage-100"
+            }`}
+          >
+            <div className="max-w-screen-2xl mx-auto flex items-start gap-4">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  urgencyAssessment.level === "emergent"
+                    ? "bg-red-100"
+                    : urgencyAssessment.level === "urgent"
+                    ? "bg-amber-100"
+                    : "bg-sage-100"
+                }`}
+              >
+                <AlertTriangle
+                  className={`w-5 h-5 ${
+                    urgencyAssessment.level === "emergent"
+                      ? "text-red-600"
+                      : urgencyAssessment.level === "urgent"
+                      ? "text-amber-600"
+                      : "text-sage-600"
+                  }`}
+                />
+              </div>
+              <div className="flex-1">
+                <p
+                  className={`font-semibold ${
+                    urgencyAssessment.level === "emergent"
+                      ? "text-red-800"
+                      : urgencyAssessment.level === "urgent"
+                      ? "text-amber-800"
+                      : "text-sage-800"
+                  }`}
+                >
+                  Red Flags Detected
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {urgencyAssessment.red_flags.map((flag, i) => (
+                    <span
+                      key={i}
+                      className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        urgencyAssessment.level === "emergent"
+                          ? "bg-red-100 text-red-700"
+                          : urgencyAssessment.level === "urgent"
+                          ? "bg-amber-100 text-amber-700"
+                          : "bg-sage-100 text-sage-700"
+                      }`}
+                    >
+                      {flag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {urgencyAssessment.specialist_needed && (
+                <div className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl">
+                  <Stethoscope className="w-4 h-4" />
+                  <span className="text-sm font-semibold">
+                    Refer to {urgencyAssessment.recommended_specialist}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Main Panel */}
         <div className="flex-1 overflow-hidden">
-          <div className="h-full max-w-screen-2xl mx-auto">
-            {renderPanel()}
-          </div>
+          <div className="h-full max-w-screen-2xl mx-auto">{renderPanel()}</div>
         </div>
       </div>
     </div>
