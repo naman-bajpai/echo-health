@@ -1,11 +1,11 @@
 // Generate PDF Edge Function
-// Creates downloadable PDF from visit summary
+// Creates downloadable PDF from visit summary with all details
 
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
-import { handleCors, jsonResponse, errorResponse, corsHeaders } from "../_shared/cors.ts";
+import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
 import { generateSummaryPdf } from "../_shared/pdf.ts";
-import type { GeneratePdfRequest, PatientSummary } from "../_shared/types.ts";
+import type { GeneratePdfRequest, PatientSummary, ExtractedFields } from "../_shared/types.ts";
 
 serve(async (req: Request) => {
   // Handle CORS preflight
@@ -50,14 +50,27 @@ serve(async (req: Request) => {
       return errorResponse("Summary not found. Generate summary first.", 404);
     }
 
-    const summary = summaryArtifact.content as PatientSummary;
+    // Fetch fields artifact
+    const { data: fieldsArtifact } = await supabaseAdmin
+      .from("artifacts")
+      .select("content")
+      .eq("encounter_id", encounterId)
+      .eq("type", "fields")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
 
-    // Generate PDF
-    const pdfBytes = generateSummaryPdf(
+    const summary = summaryArtifact.content as PatientSummary;
+    const fields = fieldsArtifact?.content as ExtractedFields | null;
+
+    // Generate PDF with all available data
+    const pdfBytes = generateSummaryPdf({
       summary,
-      encounter.patient_name || undefined,
-      new Date(encounter.created_at).toLocaleDateString()
-    );
+      fields,
+      patientName: encounter.patient_name || undefined,
+      encounterDate: new Date(encounter.created_at).toLocaleDateString(),
+      encounterId: encounter.id,
+    });
 
     // Upload to Supabase Storage
     const fileName = `${encounterId}/${summaryArtifact.id}.pdf`;
@@ -93,46 +106,3 @@ serve(async (req: Request) => {
     return errorResponse("Internal server error", 500);
   }
 });
-
-// Also support direct PDF download
-export async function downloadPdf(encounterId: string): Promise<Response> {
-  try {
-    // Fetch latest summary
-    const { data: summaryArtifact } = await supabaseAdmin
-      .from("artifacts")
-      .select("*")
-      .eq("encounter_id", encounterId)
-      .eq("type", "summary")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (!summaryArtifact) {
-      return errorResponse("Summary not found", 404);
-    }
-
-    const { data: encounter } = await supabaseAdmin
-      .from("encounters")
-      .select("*")
-      .eq("id", encounterId)
-      .single();
-
-    const summary = summaryArtifact.content as PatientSummary;
-    const pdfBytes = generateSummaryPdf(
-      summary,
-      encounter?.patient_name || undefined,
-      encounter ? new Date(encounter.created_at).toLocaleDateString() : undefined
-    );
-
-    return new Response(pdfBytes, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="visit-summary.pdf"`,
-      },
-    });
-  } catch (error) {
-    console.error("Error:", error);
-    return errorResponse("Failed to generate PDF", 500);
-  }
-}

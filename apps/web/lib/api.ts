@@ -14,6 +14,7 @@ import type {
   Provider,
   Encounter,
   TranscriptChunk,
+  ExtractedFields,
 } from "./types";
 
 const FUNCTIONS_URL = process.env.NEXT_PUBLIC_SUPABASE_URL + "/functions/v1";
@@ -81,6 +82,53 @@ export async function extractFields(
   return callFunction<ExtractFieldsResponse>("extract-fields", {
     encounterId,
   });
+}
+
+/**
+ * Update extracted fields (save edits)
+ */
+export async function updateFields(
+  encounterId: string,
+  fields: ExtractedFields
+): Promise<{ success: boolean }> {
+  // Update the artifact directly in Supabase
+  const { error } = await supabase
+    .from("artifacts")
+    .update({ content: fields })
+    .eq("encounter_id", encounterId)
+    .eq("type", "fields")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    // If no existing artifact, create one
+    const { error: insertError } = await supabase
+      .from("artifacts")
+      .insert({
+        encounter_id: encounterId,
+        type: "fields",
+        content: fields,
+      });
+
+    if (insertError) {
+      throw new Error("Failed to save fields");
+    }
+  }
+
+  // Also update encounter with patient info
+  const updates: Record<string, unknown> = {};
+  if (fields.patient_name) updates.patient_name = fields.patient_name;
+  if (fields.dob) updates.patient_dob = fields.dob;
+  if (fields.reason_for_visit) updates.reason_for_visit = fields.reason_for_visit;
+
+  if (Object.keys(updates).length > 0) {
+    await supabase
+      .from("encounters")
+      .update(updates)
+      .eq("id", encounterId);
+  }
+
+  return { success: true };
 }
 
 /**
@@ -216,6 +264,26 @@ export async function getTranscript(
   }
 
   return data || [];
+}
+
+/**
+ * Get extracted fields for encounter
+ */
+export async function getFields(encounterId: string): Promise<ExtractedFields | null> {
+  const { data, error } = await supabase
+    .from("artifacts")
+    .select("content")
+    .eq("encounter_id", encounterId)
+    .eq("type", "fields")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  return data?.content as ExtractedFields;
 }
 
 /**

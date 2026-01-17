@@ -23,6 +23,7 @@ import {
   generateSummary,
   getSummaryPdfUrl,
   narrateExplanation,
+  updateFields,
 } from "@/lib/api";
 import type {
   Encounter,
@@ -34,7 +35,8 @@ import type {
   PanelMode,
   SpeakerRole,
 } from "@/lib/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Activity } from "lucide-react";
+import Link from "next/link";
 
 export default function EncounterPage() {
   const params = useParams();
@@ -54,6 +56,7 @@ export default function EncounterPage() {
     }>
   >([]);
   const [summary, setSummary] = useState<PatientSummary | null>(null);
+  const [livekitToken, setLivekitToken] = useState<string | null>(null);
 
   const [currentMode, setCurrentMode] = useState<PanelMode>("transcript");
   const [currentSpeaker, setCurrentSpeaker] = useState<SpeakerRole>("staff");
@@ -79,6 +82,12 @@ export default function EncounterPage() {
 
         setEncounter(encounterData);
         setTranscript(transcriptData);
+        
+        // Get LiveKit token if room exists
+        if (encounterData.livekit_room_name) {
+          // Token would be fetched from start-encounter, stored in session/state
+          // For now, we'll use browser STT as fallback
+        }
       } catch (err) {
         console.error("Error loading encounter:", err);
         setError("Failed to load encounter");
@@ -129,6 +138,18 @@ export default function EncounterPage() {
     }
   }, [encounterId]);
 
+  const handleUpdateFields = useCallback(
+    async (updatedFields: ExtractedFields) => {
+      try {
+        await updateFields(encounterId, updatedFields);
+        setFields(updatedFields);
+      } catch (err) {
+        console.error("Failed to update fields:", err);
+      }
+    },
+    [encounterId]
+  );
+
   const handleGenerateDraftNote = useCallback(async () => {
     try {
       const result = await generateDraftNote(encounterId);
@@ -178,7 +199,6 @@ export default function EncounterPage() {
   const handleDownloadPdf = useCallback(async () => {
     try {
       const result = await getSummaryPdfUrl(encounterId);
-      // Open PDF in new tab
       window.open(result.pdfUrl, "_blank");
     } catch (err) {
       console.error("Failed to download PDF:", err);
@@ -206,10 +226,12 @@ export default function EncounterPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary-600 mx-auto mb-4" />
-          <p className="text-gray-500">Loading encounter...</p>
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-2xl mb-4">
+            <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+          </div>
+          <p className="text-gray-600 font-medium">Loading encounter...</p>
         </div>
       </div>
     );
@@ -218,12 +240,20 @@ export default function EncounterPage() {
   // Error state
   if (error || !encounter) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-600 text-lg mb-4">{error || "Encounter not found"}</p>
-          <a href="/" className="btn-primary">
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-md">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-100 rounded-2xl mb-4">
+            <Activity className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">
+            {error || "Encounter not found"}
+          </h2>
+          <p className="text-gray-500 mb-6">
+            The encounter you're looking for doesn't exist or has been removed.
+          </p>
+          <Link href="/" className="btn-primary inline-flex items-center gap-2">
             Go Home
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -239,6 +269,8 @@ export default function EncounterPage() {
             currentSpeaker={currentSpeaker}
             onSpeakerChange={setCurrentSpeaker}
             onAddTranscript={handleAddTranscript}
+            livekitToken={livekitToken}
+            roomName={encounter.livekit_room_name}
           />
         );
       case "fields":
@@ -246,6 +278,7 @@ export default function EncounterPage() {
           <FieldsPanel
             fields={fields}
             onExtract={handleExtractFields}
+            onUpdate={handleUpdateFields}
           />
         );
       case "note":
@@ -277,13 +310,13 @@ export default function EncounterPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen">
+    <div className="flex-1 flex flex-col h-screen bg-gray-50">
       <EncounterHeader encounter={encounter} />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Safety Banner & Mode Switcher */}
-        <div className="border-b border-gray-200 bg-white px-6 py-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="bg-white border-b border-gray-100 px-6 py-4">
+          <div className="max-w-screen-2xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <SafetyBanner
               status={encounter.status}
               showDraftWarning={currentMode === "note"}
@@ -296,8 +329,8 @@ export default function EncounterPage() {
         </div>
 
         {/* Main Panel */}
-        <div className="flex-1 overflow-hidden bg-gray-50">
-          <div className="h-full overflow-y-auto">
+        <div className="flex-1 overflow-hidden">
+          <div className="h-full max-w-screen-2xl mx-auto">
             {renderPanel()}
           </div>
         </div>

@@ -4,7 +4,7 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { completeJson, isConfigured } from "../_shared/openai.ts";
+import { completeJson, isConfigured } from "../_shared/claude.ts";
 import { SYSTEM_PROMPT, EXTRACT_FIELDS_PROMPT, getPrompt } from "../_shared/prompts.ts";
 import { checkCompliance } from "../_shared/safety.ts";
 import type { ExtractFieldsRequest, ExtractedFields } from "../_shared/types.ts";

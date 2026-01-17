@@ -4,7 +4,7 @@
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { complete, isConfigured } from "../_shared/openai.ts";
+import { complete, isConfigured } from "../_shared/claude.ts";
 import { SYSTEM_PROMPT, DRAFT_NOTE_PROMPT, getPrompt } from "../_shared/prompts.ts";
 import { sanitizeOutput, addDraftLabel, checkCompliance } from "../_shared/safety.ts";
 import type { GenerateDraftNoteRequest, DraftNote } from "../_shared/types.ts";
