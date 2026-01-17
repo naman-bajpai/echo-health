@@ -1,0 +1,132 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-start-rgb: 248, 250, 252;
+  --background-end-rgb: 241, 245, 249;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--background-start-rgb)),
+    rgb(var(--background-end-rgb))
+  );
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Transcript styles */
+.transcript-entry {
+  @apply p-3 rounded-lg mb-2;
+}
+
+.transcript-patient {
+  @apply bg-blue-50 border-l-4 border-blue-400;
+}
+
+.transcript-clinician {
+  @apply bg-green-50 border-l-4 border-green-400;
+}
+
+.transcript-staff {
+  @apply bg-gray-50 border-l-4 border-gray-400;
+}
+
+/* Panel transitions */
+.panel {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+/* Button styles */
+.btn-primary {
+  @apply bg-primary-600 text-white px-4 py-2 rounded-lg font-medium
+         hover:bg-primary-700 focus:outline-none focus:ring-2 
+         focus:ring-primary-500 focus:ring-offset-2
+         disabled:opacity-50 disabled:cursor-not-allowed
+         transition-colors duration-200;
+}
+
+.btn-secondary {
+  @apply bg-white text-gray-700 px-4 py-2 rounded-lg font-medium
+         border border-gray-300
+         hover:bg-gray-50 focus:outline-none focus:ring-2 
+         focus:ring-primary-500 focus:ring-offset-2
+         disabled:opacity-50 disabled:cursor-not-allowed
+         transition-colors duration-200;
+}
+
+.btn-success {
+  @apply bg-accent-600 text-white px-4 py-2 rounded-lg font-medium
+         hover:bg-accent-700 focus:outline-none focus:ring-2 
+         focus:ring-accent-500 focus:ring-offset-2
+         disabled:opacity-50 disabled:cursor-not-allowed
+         transition-colors duration-200;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-4 py-2 rounded-lg border border-gray-300
+         focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+         placeholder-gray-400;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.loading {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Draft watermark */
+.draft-watermark {
+  position: relative;
+}
+
+.draft-watermark::before {
+  content: "DRAFT";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  font-size: 4rem;
+  font-weight: bold;
+  color: rgba(239, 68, 68, 0.1);
+  pointer-events: none;
+  z-index: 0;
+}
