@@ -1,0 +1,5 @@
+[project]
+  subdomain = "echo-health-a3cjlckg"
+
+[agent]
+  id = "CA_aiEEwtDRd7A9"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Square, User, Stethoscope, UserCircle, Volume2, Loader2, Waves } from "lucide-react";
+import { Mic, Square, User, Stethoscope, UserCircle, Volume2, Loader2, Waves, Wifi, AlertCircle } from "lucide-react";
 import type { TranscriptChunk, SpeakerRole } from "@/lib/types";
 import { SPEAKER_NAMES, formatTime } from "@/lib/safety";
 
@@ -9,7 +9,11 @@ interface TranscriptPanelProps {
   transcript: TranscriptChunk[];
   onAddTranscript: (text: string) => Promise<any>;
   disabled?: boolean;
+  livekitToken?: string | null;
+  roomName?: string | null;
 }
+
+const LIVEKIT_URL = process.env.NEXT_PUBLIC_LIVEKIT_URL || "";
 
 const speakerIcons = {
   patient: User,
@@ -42,16 +46,23 @@ export default function TranscriptPanel({
   transcript,
   onAddTranscript,
   disabled,
+  livekitToken,
+  roomName,
 }: TranscriptPanelProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [liveText, setLiveText] = useState("");
   const [processingQueue, setProcessingQueue] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isConnected, setIsConnected] = useState(false);
 
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const recognitionRef = useRef<any>(null);
+  const roomRef = useRef<any>(null);
+
+  // Check if LiveKit is configured
+  const livekitConfigured = Boolean(livekitToken && roomName && LIVEKIT_URL);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -68,15 +79,20 @@ export default function TranscriptPanel({
   // Process and send transcript to server
   const sendToServer = useCallback(
     async (text: string) => {
-      if (!text.trim() || text.trim().length < 3) return;
+      if (!text.trim() || text.trim().length < 3) {
+        console.log("⚠️ Skipping short text:", text);
+        return;
+      }
 
       const trimmedText = text.trim();
+      console.log(`💾 Sending transcript to server: "${trimmedText}"`);
       setProcessingQueue((prev) => [...prev, trimmedText]);
 
       try {
-        await onAddTranscript(trimmedText);
+        const result = await onAddTranscript(trimmedText);
+        console.log("✅ Transcript saved successfully:", result);
       } catch (err) {
-        console.error("Failed to process transcript:", err);
+        console.error("❌ Failed to save transcript:", err);
       } finally {
         setProcessingQueue((prev) => prev.filter((t) => t !== trimmedText));
       }
@@ -84,91 +100,127 @@ export default function TranscriptPanel({
     [onAddTranscript]
   );
 
-  // Start recording
-  const startRecording = useCallback(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setError(
-        "Speech recognition not supported. Please use Chrome or Edge browser."
-      );
+  // Start LiveKit recording
+  const startRecording = useCallback(async () => {
+    if (!livekitToken || !roomName || !LIVEKIT_URL) {
+      setError("LiveKit is not configured. Please check your environment variables.");
       return;
     }
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setIsRecording(true);
-      setError(null);
-      setRecordingTime(0);
-
-      timerRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
-      }, 1000);
-    };
-
-    recognition.onresult = (event: any) => {
-      let interimTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        const transcript = result[0].transcript;
-
-        if (result.isFinal) {
-          sendToServer(transcript);
-          setLiveText("");
-        } else {
-          interimTranscript = transcript;
-        }
-      }
-
-      if (interimTranscript) {
-        setLiveText(interimTranscript);
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      if (event.error === "no-speech") return;
-      if (event.error === "aborted") return;
-
-      console.error("Speech error:", event.error);
-
-      if (event.error === "not-allowed") {
-        setError(
-          "Microphone access denied. Please allow microphone in browser settings."
-        );
-        stopRecording();
-      }
-    };
-
-    recognition.onend = () => {
-      if (recognitionRef.current === recognition && isRecording) {
-        try {
-          recognition.start();
-        } catch (e) {
-          // Ignore
-        }
-      }
-    };
-
-    recognitionRef.current = recognition;
+    setIsConnecting(true);
+    setError(null);
 
     try {
-      recognition.start();
-    } catch (e) {
-      setError("Failed to start recording. Please try again.");
+      // Dynamic import to avoid SSR issues
+      const { Room, RoomEvent, Track, DataPacket_Kind } = await import("livekit-client");
+
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+      roomRef.current = room;
+
+      // Handle connection events
+      room.on(RoomEvent.Connected, () => {
+        console.log("✅ Connected to LiveKit room:", roomName);
+        setIsConnected(true);
+        setIsConnecting(false);
+        setIsRecording(true);
+        setError(null);
+
+        timerRef.current = setInterval(() => {
+          setRecordingTime((t) => t + 1);
+        }, 1000);
+      });
+
+      room.on(RoomEvent.Disconnected, (reason) => {
+        console.log("❌ Disconnected from LiveKit room:", reason);
+        setIsConnected(false);
+        setIsRecording(false);
+      });
+
+      room.on(RoomEvent.ConnectionStateChanged, (state) => {
+        console.log("Connection state:", state);
+      });
+
+      // Handle transcription from LiveKit STT Agent
+      room.on(RoomEvent.TranscriptionReceived, (segments: any, participant: any) => {
+        console.log("📝 Transcription received:", segments);
+        
+        if (Array.isArray(segments)) {
+          for (const seg of segments) {
+            if (seg.final && seg.text) {
+              // Final transcription - send to server
+              sendToServer(seg.text);
+              setLiveText("");
+            } else if (seg.text) {
+              // Interim transcription - show live
+              setLiveText(seg.text);
+            }
+          }
+        } else if (segments?.text) {
+          // Single segment
+          if (segments.final) {
+            sendToServer(segments.text);
+            setLiveText("");
+          } else {
+            setLiveText(segments.text);
+          }
+        }
+      });
+
+      // Handle data messages (alternative transcription delivery)
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any, kind: any) => {
+        try {
+          const data = JSON.parse(new TextDecoder().decode(payload));
+          console.log("📨 Data received from agent:", data);
+          
+          if (data.type === "transcription" || data.transcript) {
+            const text = data.text || data.transcript;
+            console.log(`📝 Processing transcription: "${text}" (final: ${data.final || data.is_final})`);
+            
+            if (data.final || data.is_final) {
+              console.log("💾 Saving final transcription to database...");
+              sendToServer(text);
+              setLiveText("");
+            } else {
+              console.log("👁️ Showing interim transcription...");
+              setLiveText(text);
+            }
+          } else {
+            console.log("⚠️ Data received but not transcription:", data);
+          }
+        } catch (e) {
+          console.error("❌ Error parsing data message:", e);
+        }
+      });
+
+      // Handle track subscribed (for debugging)
+      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        console.log("🎤 Track subscribed:", track.kind, "from", participant.identity);
+      });
+
+      // Connect to room
+      console.log("🔌 Connecting to LiveKit:", LIVEKIT_URL);
+      await room.connect(LIVEKIT_URL, livekitToken);
+
+      // Enable microphone for audio capture
+      console.log("🎙️ Enabling microphone...");
+      await room.localParticipant.setMicrophoneEnabled(true);
+      console.log("✅ Microphone enabled");
+
+    } catch (err) {
+      console.error("LiveKit connection error:", err);
+      setError(`Failed to connect to LiveKit: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setIsConnecting(false);
+      setIsRecording(false);
     }
-  }, [sendToServer, isRecording]);
+  }, [livekitToken, roomName, sendToServer]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
     setIsRecording(false);
+    setIsConnecting(false);
     setLiveText("");
 
     if (timerRef.current) {
@@ -176,10 +228,14 @@ export default function TranscriptPanel({
       timerRef.current = null;
     }
 
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
+    if (roomRef.current) {
+      console.log("🔌 Disconnecting from LiveKit...");
+      roomRef.current.disconnect();
+      roomRef.current = null;
     }
+
+    setIsConnected(false);
+    setRecordingTime(0);
   }, []);
 
   const formatRecordingTime = (seconds: number) => {
@@ -200,35 +256,74 @@ export default function TranscriptPanel({
             <div>
               <h2 className="text-xl font-bold text-ink-800">Live Transcript</h2>
               <p className="text-sm text-ink-500 mt-0.5">
-                AI automatically detects who is speaking
+                {isConnected ? (
+                  <span className="flex items-center gap-1.5 text-emerald-600 font-medium">
+                    <Wifi className="w-3.5 h-3.5" />
+                    LiveKit Connected
+                  </span>
+                ) : (
+                  "Powered by LiveKit STT"
+                )}
               </p>
             </div>
           </div>
 
-          {isRecording && (
-            <div className="flex items-center gap-3 bg-red-50 px-5 py-2.5 rounded-2xl border border-red-200">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-              </span>
-              <span className="text-red-700 font-bold tabular-nums">
-                {formatRecordingTime(recordingTime)}
-              </span>
+          <div className="flex items-center gap-3">
+            {/* LiveKit Badge */}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${
+              livekitConfigured 
+                ? "bg-emerald-100 text-emerald-700" 
+                : "bg-red-100 text-red-700"
+            }`}>
+              <Wifi className="w-3.5 h-3.5" />
+              {livekitConfigured ? "LiveKit Ready" : "LiveKit Not Configured"}
             </div>
-          )}
+
+            {isRecording && (
+              <div className="flex items-center gap-3 bg-red-50 px-5 py-2.5 rounded-2xl border border-red-200">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                </span>
+                <span className="text-red-700 font-bold tabular-nums">
+                  {formatRecordingTime(recordingTime)}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex items-center justify-between">
-          <span>{error}</span>
+        <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">Connection Error</p>
+            <p className="mt-1">{error}</p>
+          </div>
           <button
             onClick={() => setError(null)}
             className="text-red-500 hover:text-red-700 font-bold text-xl leading-none"
           >
             ×
           </button>
+        </div>
+      )}
+
+      {/* LiveKit not configured warning */}
+      {!livekitConfigured && !error && (
+        <div className="mx-6 mt-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-800 text-sm">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold">LiveKit Configuration Required</p>
+              <p className="mt-1 text-amber-700">
+                Set <code className="bg-amber-100 px-1.5 py-0.5 rounded">NEXT_PUBLIC_LIVEKIT_URL</code> in your environment 
+                and ensure the encounter has a valid LiveKit token.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -243,9 +338,8 @@ export default function TranscriptPanel({
               Ready to Transcribe
             </h3>
             <p className="text-ink-500 max-w-md leading-relaxed mb-8">
-              Click the button below to start. AI will automatically detect
-              whether the <span className="text-primary-600 font-semibold">patient</span> or{" "}
-              <span className="text-ink-700 font-semibold">staff</span> is speaking.
+              Click the button below to connect to LiveKit and start real-time transcription.
+              AI will automatically detect speakers and analyze each sentence.
             </p>
             <div className="flex items-center gap-8 text-sm">
               <div className="flex items-center gap-2">
@@ -256,6 +350,10 @@ export default function TranscriptPanel({
                 <div className="w-3 h-3 rounded-full bg-primary-500"></div>
                 <span className="text-ink-500">Patient (Answers)</span>
               </div>
+            </div>
+            <div className="mt-6 flex items-center gap-2 text-xs text-emerald-600 font-medium">
+              <Wifi className="w-4 h-4" />
+              Powered by LiveKit Real-time STT
             </div>
           </div>
         ) : (
@@ -325,19 +423,27 @@ export default function TranscriptPanel({
         <div className="flex justify-center">
           <button
             onClick={isRecording ? stopRecording : startRecording}
-            disabled={disabled}
+            disabled={disabled || isConnecting || !livekitConfigured}
             className={`
               relative px-10 py-5 rounded-2xl font-bold text-lg
               transition-all duration-300 flex items-center gap-4
               ${
-                isRecording
+                isConnecting
+                  ? "bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-soft-lg"
+                  : isRecording
                   ? "bg-gradient-to-r from-red-500 to-red-600 text-white shadow-soft-lg recording-pulse"
-                  : "bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-soft hover:shadow-glow hover:-translate-y-0.5"
+                  : livekitConfigured
+                  ? "bg-gradient-to-r from-primary-600 to-primary-700 text-white shadow-soft hover:shadow-glow hover:-translate-y-0.5"
+                  : "bg-gray-300 text-gray-500 cursor-not-allowed"
               }
-              ${disabled ? "opacity-50 cursor-not-allowed" : ""}
             `}
           >
-            {isRecording ? (
+            {isConnecting ? (
+              <>
+                <Loader2 className="w-6 h-6 animate-spin" />
+                Connecting to LiveKit...
+              </>
+            ) : isRecording ? (
               <>
                 <Square className="w-6 h-6" fill="currentColor" />
                 Stop Transcribing
@@ -346,19 +452,25 @@ export default function TranscriptPanel({
               <>
                 <Mic className="w-6 h-6" />
                 Start Transcribing
-                <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sage-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-sage-500 border-2 border-white"></span>
-                </span>
+                {livekitConfigured && (
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-white"></span>
+                  </span>
+                )}
               </>
             )}
           </button>
         </div>
 
         <p className="text-center text-sm text-ink-500 mt-5">
-          {isRecording
-            ? "Speak naturally. AI detects speakers and processes text automatically."
-            : "Click to start recording. AI will identify staff questions vs patient answers."}
+          {isConnecting
+            ? "Establishing connection to LiveKit server..."
+            : isRecording
+            ? "Speak naturally. LiveKit STT transcribes in real-time, AI detects speakers."
+            : livekitConfigured
+            ? "Click to connect to LiveKit and start real-time transcription."
+            : "LiveKit must be configured to use transcription."}
         </p>
       </div>
     </div>

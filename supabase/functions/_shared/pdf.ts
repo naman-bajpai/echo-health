@@ -62,20 +62,16 @@ function buildPdfContent(
   lines.push("");
 
   // Reason for Visit
-  if (fields?.reason_for_visit || summary.what_happened_today) {
+  if (fields?.reason_for_visit || fields?.chief_complaint || summary.visit_summary) {
     lines.push("REASON FOR VISIT");
     lines.push(subDivider);
-    lines.push(fields?.reason_for_visit || "General consultation");
+    lines.push(
+      fields?.reason_for_visit ||
+        fields?.chief_complaint ||
+        "General consultation"
+    );
     lines.push("");
   }
-
-  // What You Told Us
-  lines.push("WHAT YOU TOLD US");
-  lines.push(subDivider);
-  for (const item of summary.what_you_told_us) {
-    lines.push(`  * ${wrapText(item, 50)}`);
-  }
-  lines.push("");
 
   // Symptoms (if available)
   if (fields?.symptoms && fields.symptoms.length > 0) {
@@ -87,31 +83,61 @@ function buildPdfContent(
     lines.push("");
   }
 
-  // What Happened Today
-  lines.push("WHAT HAPPENED TODAY");
+  // Visit Summary
+  lines.push("VISIT SUMMARY");
   lines.push(subDivider);
-  lines.push(wrapText(summary.what_happened_today, 55));
+  lines.push(wrapText(summary.visit_summary || "Summary pending.", 55));
   lines.push("");
 
-  // Referrals
-  if (summary.referrals.length > 0) {
-    lines.push("REFERRALS");
+  // Diagnoses
+  if (summary.diagnoses && summary.diagnoses.length > 0) {
+    lines.push("DIAGNOSES");
     lines.push(subDivider);
-    for (const referral of summary.referrals) {
-      lines.push(`  Specialty: ${referral.specialty}`);
-      if (referral.provider) lines.push(`  Provider: ${referral.provider}`);
-      lines.push(`  Reason: ${referral.reason}`);
-      lines.push("");
+    for (const diagnosis of summary.diagnoses) {
+      lines.push(`  * ${wrapText(diagnosis, 50)}`);
     }
+    lines.push("");
   }
 
-  // Next Steps
-  lines.push("NEXT STEPS");
-  lines.push(subDivider);
-  for (let i = 0; i < summary.next_steps.length; i++) {
-    lines.push(`  ${i + 1}. ${wrapText(summary.next_steps[i], 48)}`);
+  // Treatment Plan
+  if (summary.treatment_plan && summary.treatment_plan.length > 0) {
+    lines.push("TREATMENT PLAN");
+    lines.push(subDivider);
+    for (let i = 0; i < summary.treatment_plan.length; i++) {
+      lines.push(`  ${i + 1}. ${wrapText(summary.treatment_plan[i], 48)}`);
+    }
+    lines.push("");
   }
-  lines.push("");
+
+  // Medications
+  if (summary.medications && summary.medications.length > 0) {
+    lines.push("MEDICATIONS");
+    lines.push(subDivider);
+    for (const medication of summary.medications) {
+      lines.push(`  * ${wrapText(medication, 50)}`);
+    }
+    lines.push("");
+  }
+
+  // Patient Instructions
+  if (summary.patient_instructions && summary.patient_instructions.length > 0) {
+    lines.push("PATIENT INSTRUCTIONS");
+    lines.push(subDivider);
+    for (let i = 0; i < summary.patient_instructions.length; i++) {
+      lines.push(`  ${i + 1}. ${wrapText(summary.patient_instructions[i], 48)}`);
+    }
+    lines.push("");
+  }
+
+  // Warning Signs
+  if (summary.warning_signs && summary.warning_signs.length > 0) {
+    lines.push("WARNING SIGNS");
+    lines.push(subDivider);
+    for (const item of summary.warning_signs) {
+      lines.push(`  * ${wrapText(item, 50)}`);
+    }
+    lines.push("");
+  }
 
   // Follow-up
   if (summary.follow_up) {
@@ -141,9 +167,13 @@ function buildPdfContent(
   lines.push("");
   lines.push("                    IMPORTANT NOTICE");
   lines.push("");
-  lines.push("This summary is for informational purposes only and");
-  lines.push("does not constitute medical advice. Please consult");
-  lines.push("with your healthcare provider for medical decisions.");
+  if (summary.disclaimer) {
+    lines.push(wrapText(summary.disclaimer, 55));
+  } else {
+    lines.push("This summary is for informational purposes only and");
+    lines.push("does not constitute medical advice. Please consult");
+    lines.push("with your healthcare provider for medical decisions.");
+  }
   lines.push("");
   lines.push(divider);
   lines.push("");

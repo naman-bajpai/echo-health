@@ -85,11 +85,16 @@ export interface Provider {
 export interface ExtractedFields {
   patient_name?: string;
   dob?: string;
+  chief_complaint?: string;
   reason_for_visit?: string;
-  symptoms: string[]; // Verbatim patient quotes
-  timeline?: string; // "started X days ago"
-  allergies?: string[];
+  symptoms?: string[];
+  symptom_duration?: string;
+  symptom_severity?: string;
   medications?: string[];
+  allergies?: string[];
+  medical_history?: string[];
+  vital_signs?: Record<string, string>;
+  urgency_indicators?: string[];
 }
 
 /**
@@ -106,15 +111,15 @@ export interface DraftNote {
  * Patient summary content
  */
 export interface PatientSummary {
-  what_you_told_us: string[]; // Verbatim
-  what_happened_today: string; // Admin summary
-  referrals: Array<{
-    specialty: string;
-    provider?: string;
-    reason: string;
-  }>;
-  next_steps: string[];
-  follow_up?: string;
+  visit_summary: string;
+  diagnoses: string[];
+  treatment_plan: string[];
+  medications: string[];
+  follow_up: string;
+  patient_instructions: string[];
+  warning_signs: string[];
+  generated_at: string;
+  disclaimer: string;
 }
 
 /**
@@ -127,13 +132,12 @@ export interface StartEncounterRequest {
 
 export interface StartEncounterResponse {
   encounterId: string;
-  roomName: string;
+  roomName?: string;
   livekitToken?: string;
 }
 
 export interface UpsertTranscriptRequest {
   encounterId: string;
-  speaker: SpeakerRole;
   text: string;
   timestamp?: number;
 }

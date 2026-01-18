@@ -1,16 +1,24 @@
 // Generate Draft Note Edge Function
-// Creates DRAFT SOAP note from transcript (no diagnosis)
-
+// Uses Claude to generate SOAP notes
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { complete, isConfigured } from "../_shared/claude.ts";
-import { SYSTEM_PROMPT, DRAFT_NOTE_PROMPT, getPrompt } from "../_shared/prompts.ts";
-import { sanitizeOutput, addDraftLabel, checkCompliance } from "../_shared/safety.ts";
-import type { GenerateDraftNoteRequest, DraftNote } from "../_shared/types.ts";
+import { callClaudeJSON, isConfigured as isClaudeConfigured } from "../_shared/claude.ts";
+
+interface GenerateDraftNoteRequest {
+  encounterId: string;
+}
+
+interface DraftNote {
+  subjective: string;
+  objective: string;
+  assessment: string;
+  plan: string;
+  generated_at: string;
+  disclaimer: string;
+}
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 
@@ -22,151 +30,99 @@ serve(async (req: Request) => {
       return errorResponse("encounterId is required");
     }
 
-    // Fetch transcript chunks
-    const { data: chunks, error: fetchError } = await supabaseAdmin
+    // Get transcript
+    const { data: chunks } = await supabaseAdmin
       .from("transcript_chunks")
-      .select("*")
+      .select("speaker, text")
       .eq("encounter_id", encounterId)
       .order("created_at", { ascending: true });
 
-    if (fetchError) {
-      console.error("Fetch error:", fetchError);
-      return errorResponse("Failed to fetch transcript", 500);
-    }
-
-    if (!chunks || chunks.length === 0) {
-      return errorResponse("No transcript found for encounter", 404);
-    }
-
-    // Build transcript text
-    const transcript = chunks
-      .map((c) => `[${c.speaker.toUpperCase()}]: ${c.text}`)
-      .join("\n");
-
-    let draftNote: DraftNote;
-
-    if (isConfigured()) {
-      // Use LLM to generate draft note
-      const prompt = getPrompt(DRAFT_NOTE_PROMPT, { transcript });
-      const rawNote = await complete(SYSTEM_PROMPT, prompt);
-
-      // Parse SOAP sections
-      draftNote = parseSoapNote(rawNote);
-
-      // Sanitize each section
-      draftNote.subjective = sanitizeOutput(draftNote.subjective);
-      draftNote.objective = sanitizeOutput(draftNote.objective);
-      draftNote.assessment = sanitizeOutput(draftNote.assessment);
-      draftNote.plan = sanitizeOutput(draftNote.plan);
-
-      // Check compliance
-      const fullNote = Object.values(draftNote).join(" ");
-      const compliance = checkCompliance(fullNote);
-      if (!compliance.isCompliant) {
-        console.warn("Compliance warnings in draft note:", compliance.violations);
-      }
-    } else {
-      // Fallback: basic note generation
-      draftNote = generateBasicNote(chunks);
-    }
-
-    // Store as artifact
-    const { data: artifact, error: artifactError } = await supabaseAdmin
+    // Get extracted fields
+    const { data: fieldsArtifact } = await supabaseAdmin
       .from("artifacts")
-      .insert({
-        encounter_id: encounterId,
-        type: "draft_note",
-        content: {
-          ...draftNote,
-          is_draft: true,
-          generated_at: new Date().toISOString(),
-        },
-      })
-      .select()
+      .select("content")
+      .eq("encounter_id", encounterId)
+      .eq("type", "fields")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .single();
 
-    if (artifactError) {
-      console.error("Artifact error:", artifactError);
-      return errorResponse("Failed to save draft note", 500);
+    const transcriptText = chunks
+      ?.map((c) => `${c.speaker.toUpperCase()}: ${c.text}`)
+      .join("\n") || "";
+
+    const extractedFields = fieldsArtifact?.content || {};
+
+    let draftNote: DraftNote = {
+      subjective: "",
+      objective: "",
+      assessment: "",
+      plan: "",
+      generated_at: new Date().toISOString(),
+      disclaimer: "DRAFT ONLY - This note was AI-generated and requires clinician review and approval before use in medical records.",
+    };
+
+    if (isClaudeConfigured()) {
+      const prompt = `You are a medical documentation assistant. Generate a professional SOAP note from this patient encounter.
+
+TRANSCRIPT:
+${transcriptText}
+
+EXTRACTED FIELDS:
+${JSON.stringify(extractedFields, null, 2)}
+
+Generate a SOAP note following this format:
+
+SUBJECTIVE (S): Patient's complaints, symptoms, and history as they reported
+OBJECTIVE (O): Clinical findings, vital signs, examination results mentioned
+ASSESSMENT (A): Clinical impression - MUST be marked as DRAFT requiring physician review
+PLAN (P): Treatment recommendations - MUST be marked as DRAFT requiring physician approval
+
+IMPORTANT RULES:
+- Do NOT make definitive diagnoses
+- Mark all clinical assessments as "[DRAFT - Requires physician review]"
+- Only document information from the transcript
+- Use professional medical terminology
+- Be concise but thorough
+
+Respond with JSON only:
+{
+  "subjective": "Patient's reported symptoms and history...",
+  "objective": "Clinical findings and observations...",
+  "assessment": "[DRAFT - Requires physician review] Clinical impression...",
+  "plan": "[DRAFT - Requires physician approval] Recommended treatment..."
+}`;
+
+      const result = await callClaudeJSON<Partial<DraftNote>>(prompt);
+      if (result) {
+        draftNote = { ...draftNote, ...result };
+      }
+    } else {
+      // Fallback
+      const patientText = chunks
+        ?.filter((c) => c.speaker === "patient")
+        .map((c) => c.text)
+        .join(". ") || "No patient statements recorded.";
+
+      draftNote.subjective = `Patient reports: ${patientText}`;
+      draftNote.objective = "Vital signs and physical examination findings pending documentation.";
+      draftNote.assessment = "[DRAFT - Requires physician review] Assessment pending clinical evaluation.";
+      draftNote.plan = "[DRAFT - Requires physician approval] Treatment plan to be determined.";
     }
 
+    // Save as artifact
+    await supabaseAdmin.from("artifacts").insert({
+      encounter_id: encounterId,
+      type: "draft_note",
+      content: draftNote,
+    });
+
     return jsonResponse({
-      artifactId: artifact.id,
-      draftNote: {
-        ...draftNote,
-        formatted: addDraftLabel(formatSoapNote(draftNote)),
-      },
+      draftNote,
+      encounterId,
     });
   } catch (error) {
     console.error("Error:", error);
     return errorResponse("Internal server error", 500);
   }
 });
-
-/**
- * Parse SOAP note from LLM response
- */
-function parseSoapNote(text: string): DraftNote {
-  const sections: DraftNote = {
-    subjective: "",
-    objective: "",
-    assessment: "",
-    plan: "",
-  };
-
-  // Try to extract sections
-  const subjectiveMatch = text.match(/subjective[:\s]*([\s\S]*?)(?=objective|$)/i);
-  const objectiveMatch = text.match(/objective[:\s]*([\s\S]*?)(?=assessment|$)/i);
-  const assessmentMatch = text.match(/assessment[:\s]*([\s\S]*?)(?=plan|$)/i);
-  const planMatch = text.match(/plan[:\s]*([\s\S]*?)$/i);
-
-  if (subjectiveMatch) sections.subjective = subjectiveMatch[1].trim();
-  if (objectiveMatch) sections.objective = objectiveMatch[1].trim();
-  if (assessmentMatch) sections.assessment = assessmentMatch[1].trim();
-  if (planMatch) sections.plan = planMatch[1].trim();
-
-  return sections;
-}
-
-/**
- * Format SOAP note for display
- */
-function formatSoapNote(note: DraftNote): string {
-  return `**SUBJECTIVE**
-${note.subjective}
-
-**OBJECTIVE**
-${note.objective}
-
-**ASSESSMENT**
-${note.assessment}
-
-**PLAN**
-${note.plan}`;
-}
-
-/**
- * Generate basic note without LLM
- */
-function generateBasicNote(
-  chunks: Array<{ speaker: string; text: string }>
-): DraftNote {
-  const patientStatements = chunks
-    .filter((c) => c.speaker === "patient")
-    .map((c) => c.text);
-
-  const clinicianStatements = chunks
-    .filter((c) => c.speaker === "clinician")
-    .map((c) => c.text);
-
-  return {
-    subjective: patientStatements.length > 0
-      ? `Patient reported: "${patientStatements.join('" "')}`
-      : "No patient statements recorded.",
-    objective: "As observed during encounter.",
-    assessment: clinicianStatements.length > 0
-      ? `Clinician discussed: ${clinicianStatements.join("; ")}`
-      : "Discussion documented in transcript.",
-    plan: "To be determined by clinician review.",
-  };
-}

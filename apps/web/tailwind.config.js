@@ -7,42 +7,42 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Deep teal - primary brand color (medical, trustworthy, unique)
+        // Purple/Pink Gradient - primary brand color (elegant, modern, healthcare)
         primary: {
-          50: "#f0fdfa",
-          100: "#ccfbf1",
-          200: "#99f6e4",
-          300: "#5eead4",
-          400: "#2dd4bf",
-          500: "#14b8a6",
-          600: "#0d9488",
-          700: "#0f766e",
-          800: "#115e59",
-          900: "#134e4a",
-          950: "#042f2e",
+          50: "#faf5f9",
+          100: "#f5ebf3",
+          200: "#edd6e8",
+          300: "#E8B4D4", // Light pink
+          400: "#d89cc7",
+          500: "#B88CD6", // Medium purple
+          600: "#A78BCA", // Medium purple alt
+          700: "#7B68BB", // Dark purple/blue
+          800: "#6B5B95", // Dark purple alt
+          900: "#564a7a",
+          950: "#3a3254",
         },
-        // Warm coral/terracotta - accent color (warm, human, approachable)
+        // Pink accent color (warm, approachable)
         accent: {
-          50: "#fff7ed",
-          100: "#ffedd5",
-          200: "#fed7aa",
-          300: "#fdba74",
-          400: "#fb923c",
-          500: "#f97316",
-          600: "#ea580c",
-          700: "#c2410c",
-          800: "#9a3412",
-          900: "#7c2d12",
-          950: "#431407",
+          50: "#fef5f8",
+          100: "#fce8f0",
+          200: "#fbd4e4",
+          300: "#f8b3cd",
+          400: "#f488af",
+          500: "#ed5f92",
+          600: "#E8B4D4", // Light pink accent
+          700: "#c2256b",
+          800: "#a1205c",
+          900: "#862050",
+          950: "#520d2e",
         },
-        // Warm surface colors for backgrounds
+        // Clean white surfaces for backgrounds
         surface: {
-          50: "#fefdfb",
-          100: "#fdf9f3",
-          200: "#faf4ea",
-          300: "#f5ebe0",
-          400: "#e8dcc9",
-          500: "#d4c4a8",
+          50: "#ffffff",
+          100: "#fafafa",
+          200: "#f5f5f5",
+          300: "#efefef",
+          400: "#e5e5e5",
+          500: "#d4d4d4",
         },
         // Sage green for success states
         sage: {
@@ -57,18 +57,19 @@ module.exports = {
           800: "#373f2c",
           900: "#303628",
         },
-        // Slate blue for text (softer than pure black/gray)
+        // Black/dark gray for text (clean, professional)
         ink: {
-          50: "#f8fafc",
-          100: "#f1f5f9",
-          200: "#e2e8f0",
-          300: "#cbd5e1",
-          400: "#94a3b8",
-          500: "#64748b",
-          600: "#475569",
-          700: "#334155",
-          800: "#1e293b",
-          900: "#0f172a",
+          50: "#fafafa",
+          100: "#f5f5f5",
+          200: "#e5e5e5",
+          300: "#d4d4d4",
+          400: "#a3a3a3",
+          500: "#737373",
+          600: "#525252",
+          700: "#404040",
+          800: "#262626",
+          900: "#1A1A1A", // Near black
+          950: "#000000", // Pure black
         },
       },
       fontFamily: {
@@ -86,12 +87,12 @@ module.exports = {
         "soft-lg": "0 10px 40px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.04)",
         "soft-xl": "0 20px 50px -12px rgba(0, 0, 0, 0.08)",
         "inner-soft": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.03)",
-        "glow": "0 0 20px rgba(20, 184, 166, 0.15)",
-        "glow-accent": "0 0 20px rgba(249, 115, 22, 0.15)",
+        "glow": "0 0 20px rgba(184, 140, 214, 0.25)", // Purple glow
+        "glow-accent": "0 0 20px rgba(232, 180, 212, 0.25)", // Pink glow
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "mesh": "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23e8dcc9' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
+        "mesh": "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23E8B4D4' fill-opacity='0.15'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")",
       },
       animation: {
         "fade-in": "fadeIn 0.5s ease-out",

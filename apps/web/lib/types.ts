@@ -1,4 +1,8 @@
 // Type definitions for Echo Health
+// 
+// Note: LiveKit is not currently wired up. The app uses browser SpeechRecognition
+// for real-time transcription which works without any server setup.
+// room_name and livekit_token are kept for future LiveKit integration.
 
 export type SpeakerRole = "patient" | "clinician" | "staff";
 export type UserRole = "nurse" | "doctor";

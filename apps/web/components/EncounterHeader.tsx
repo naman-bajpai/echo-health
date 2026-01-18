@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowLeft,
   User,
@@ -9,9 +10,9 @@ import {
   CheckCircle,
   Stethoscope,
   Badge,
-  HeartPulse,
 } from "lucide-react";
 import type { Encounter } from "@/lib/types";
+import logo from "@/logo.png";
 
 interface EncounterHeaderProps {
   encounter: Encounter;
@@ -65,9 +66,14 @@ export default function EncounterHeader({ encounter }: EncounterHeaderProps) {
             <div className="w-px h-10 bg-surface-200" />
 
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-700 rounded-2xl flex items-center justify-center shadow-soft">
-                <HeartPulse className="w-6 h-6 text-white" />
-              </div>
+              <Image
+                src={logo}
+                alt="Echo Health logo"
+                width={234}
+                height={69}
+                className="h-12 w-auto"
+                priority
+              />
               <div>
                 <div className="flex items-center gap-3">
                   <h1 className="font-bold text-ink-800 text-lg">

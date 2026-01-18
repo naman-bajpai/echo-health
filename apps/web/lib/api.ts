@@ -219,6 +219,18 @@ export async function assessUrgency(
 }
 
 /**
+ * Comprehensive AI analysis of entire encounter
+ * Extracts fields, assesses urgency, recommends specialists - all at once
+ */
+export async function analyzeEncounter(
+  encounterId: string
+): Promise<{ success: boolean; analysis: any; encounterId: string }> {
+  return callFunction("analyze-encounter", {
+    encounterId,
+  });
+}
+
+/**
  * Log trace event
  */
 export async function logTrace(

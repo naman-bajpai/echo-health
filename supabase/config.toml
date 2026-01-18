@@ -72,5 +72,8 @@ verify_jwt = false
 [functions.assess-urgency]
 verify_jwt = false
 
+[functions.analyze-encounter]
+verify_jwt = false
+
 [analytics]
 enabled = false

@@ -13,10 +13,11 @@ import {
   X,
   Plus,
 } from "lucide-react";
-import type { ExtractedFields } from "@/lib/types";
+import type { ExtractedFields, Encounter } from "@/lib/types";
 
 interface FieldsPanelProps {
   fields: ExtractedFields | null;
+  encounter?: Encounter | null; // Pre-populate from encounter data
   onExtract: () => Promise<void>;
   onUpdate?: (fields: ExtractedFields) => void;
   isLoading?: boolean;
@@ -25,6 +26,7 @@ interface FieldsPanelProps {
 
 export default function FieldsPanel({
   fields,
+  encounter,
   onExtract,
   onUpdate,
   isLoading,
@@ -37,12 +39,29 @@ export default function FieldsPanel({
   const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Sync editable fields with props
+  // Sync editable fields with props, pre-populate from encounter data
   useEffect(() => {
+    // Start with encounter data, then overlay AI-extracted fields
+    const baseFields: ExtractedFields = {
+      patient_name: encounter?.patient_name || "",
+      dob: encounter?.patient_dob || "",
+      reason_for_visit: encounter?.reason_for_visit || "",
+    };
+
     if (fields) {
-      setEditableFields({ ...fields });
+      // Merge AI fields, but keep encounter data for name/dob/reason if AI didn't extract them
+      setEditableFields({
+        ...baseFields,
+        ...fields,
+        patient_name: fields.patient_name || baseFields.patient_name,
+        dob: fields.dob || baseFields.dob,
+        reason_for_visit: fields.reason_for_visit || baseFields.reason_for_visit,
+      });
+    } else if (encounter) {
+      // Show encounter data even before AI extraction
+      setEditableFields(baseFields);
     }
-  }, [fields]);
+  }, [fields, encounter]);
 
   const handleExtract = async () => {
     setIsExtracting(true);

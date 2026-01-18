@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
+import logo from "@/logo.png";
 import {
   Plus,
   LogOut,
@@ -19,7 +21,6 @@ import {
   Search,
   Users,
   User,
-  HeartPulse,
   Activity,
   TrendingUp,
   Sparkles,
@@ -138,21 +139,20 @@ export default function DashboardPage() {
   const needSpecialist = encounters.filter((e) => e.specialist_needed).length;
 
   return (
-    <div className="min-h-screen bg-surface-50">
+    <div className="min-h-screen bg-white">
       {/* Header */}
-      <header className="bg-white/80 backdrop-blur-xl border-b border-surface-200 sticky top-0 z-50">
+      <header className="bg-white/90 backdrop-blur-xl border-b border-primary-100 sticky top-0 z-50 shadow-sm">
         <div className="max-w-7xl mx-auto px-6">
           <div className="flex items-center justify-between h-20">
-            <Link href="/dashboard" className="flex items-center gap-3">
-              <div className="relative">
-                <div className="w-11 h-11 bg-gradient-to-br from-primary-500 to-primary-700 rounded-xl flex items-center justify-center">
-                  <HeartPulse className="w-6 h-6 text-white" />
-                </div>
-                <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-accent-500 rounded-full border-2 border-white" />
-              </div>
-              <span className="text-xl font-bold text-ink-800">
-                Echo<span className="text-primary-600">Health</span>
-              </span>
+            <Link href="/dashboard" className="flex items-center">
+              <Image
+                src={logo}
+                alt="Echo Health logo"
+                width={234}
+                height={69}
+                className="h-12 w-auto"
+                priority
+              />
             </Link>
 
             <div className="flex items-center gap-4">

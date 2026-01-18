@@ -141,94 +141,143 @@ export default function SummaryPanel({
           </div>
         ) : (
           <div className="space-y-6">
-            {/* What You Told Us */}
+            {/* Visit Summary */}
             <div className="card p-6 bg-gradient-to-br from-primary-50/50 to-white">
               <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
                 <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">
                   <MessageSquare className="w-5 h-5 text-primary-600" />
                 </div>
-                What You Told Us
-              </h3>
-              <ul className="space-y-3">
-                {summary.what_you_told_us.map((item, index) => (
-                  <li
-                    key={index}
-                    className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
-                  >
-                    <span className="flex-shrink-0 w-7 h-7 bg-primary-100 text-primary-700 rounded-lg flex items-center justify-center text-sm font-bold">
-                      {index + 1}
-                    </span>
-                    <span className="text-ink-700 pt-0.5">{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* What Happened Today */}
-            <div className="card p-6 bg-gradient-to-br from-sage-50/50 to-white">
-              <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 bg-sage-100 rounded-xl flex items-center justify-center">
-                  <CheckCircle className="w-5 h-5 text-sage-600" />
-                </div>
-                What Happened Today
+                Visit Summary
               </h3>
               <p className="text-ink-700 leading-relaxed bg-white p-4 rounded-xl border border-surface-200">
-                {summary.what_happened_today}
+                {summary.visit_summary}
               </p>
             </div>
 
-            {/* Referrals */}
-            {summary.referrals.length > 0 && (
-              <div className="card p-6 bg-gradient-to-br from-purple-50/50 to-white">
+            {/* Diagnoses */}
+            {(summary.diagnoses || []).length > 0 && (
+              <div className="card p-6 bg-gradient-to-br from-sage-50/50 to-white">
                 <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <ArrowRight className="w-5 h-5 text-purple-600" />
+                  <div className="w-10 h-10 bg-sage-100 rounded-xl flex items-center justify-center">
+                    <CheckCircle className="w-5 h-5 text-sage-600" />
                   </div>
-                  Referrals
+                  Diagnoses
                 </h3>
-                <div className="space-y-3">
-                  {summary.referrals.map((referral, index) => (
-                    <div
+                <ul className="space-y-3">
+                  {(summary.diagnoses || []).map((diagnosis, index) => (
+                    <li
                       key={index}
-                      className="bg-white rounded-xl p-5 border border-surface-200"
+                      className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
                     >
-                      <p className="font-semibold text-purple-800 text-lg">
-                        {referral.specialty}
-                      </p>
-                      {referral.provider && (
-                        <p className="text-sm text-purple-600 mt-1">
-                          Provider: {referral.provider}
-                        </p>
-                      )}
-                      <p className="text-ink-600 mt-2">{referral.reason}</p>
-                    </div>
+                      <span className="flex-shrink-0 w-7 h-7 bg-sage-100 text-sage-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                        {index + 1}
+                      </span>
+                      <span className="text-ink-700 pt-0.5">{diagnosis}</span>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
 
-            {/* Next Steps */}
-            <div className="card p-6 bg-gradient-to-br from-accent-50/50 to-white">
-              <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 bg-accent-100 rounded-xl flex items-center justify-center">
-                  <ArrowRight className="w-5 h-5 text-accent-600" />
-                </div>
-                Next Steps
-              </h3>
-              <ul className="space-y-3">
-                {summary.next_steps.map((step, index) => (
-                  <li
-                    key={index}
-                    className="flex items-start gap-4 bg-white p-4 rounded-xl border border-surface-200"
-                  >
-                    <span className="flex-shrink-0 w-9 h-9 bg-accent-100 text-accent-700 rounded-xl flex items-center justify-center font-bold">
-                      {index + 1}
-                    </span>
-                    <span className="text-ink-700 pt-1.5">{step}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Treatment Plan */}
+            {(summary.treatment_plan || []).length > 0 && (
+              <div className="card p-6 bg-gradient-to-br from-accent-50/50 to-white">
+                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-accent-100 rounded-xl flex items-center justify-center">
+                    <ArrowRight className="w-5 h-5 text-accent-600" />
+                  </div>
+                  Treatment Plan
+                </h3>
+                <ul className="space-y-3">
+                  {(summary.treatment_plan || []).map((step, index) => (
+                    <li
+                      key={index}
+                      className="flex items-start gap-4 bg-white p-4 rounded-xl border border-surface-200"
+                    >
+                      <span className="flex-shrink-0 w-9 h-9 bg-accent-100 text-accent-700 rounded-xl flex items-center justify-center font-bold">
+                        {index + 1}
+                      </span>
+                      <span className="text-ink-700 pt-1.5">{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Medications */}
+            {(summary.medications || []).length > 0 && (
+              <div className="card p-6 bg-gradient-to-br from-purple-50/50 to-white">
+                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-purple-600" />
+                  </div>
+                  Medications
+                </h3>
+                <ul className="space-y-3">
+                  {(summary.medications || []).map((medication, index) => (
+                    <li
+                      key={index}
+                      className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
+                    >
+                      <span className="flex-shrink-0 w-7 h-7 bg-purple-100 text-purple-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                        {index + 1}
+                      </span>
+                      <span className="text-ink-700 pt-0.5">{medication}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Patient Instructions */}
+            {(summary.patient_instructions || []).length > 0 && (
+              <div className="card p-6 bg-gradient-to-br from-primary-50/50 to-white">
+                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">
+                    <ArrowRight className="w-5 h-5 text-primary-600" />
+                  </div>
+                  Patient Instructions
+                </h3>
+                <ul className="space-y-3">
+                  {(summary.patient_instructions || []).map((item, index) => (
+                    <li
+                      key={index}
+                      className="flex items-start gap-4 bg-white p-4 rounded-xl border border-surface-200"
+                    >
+                      <span className="flex-shrink-0 w-9 h-9 bg-primary-100 text-primary-700 rounded-xl flex items-center justify-center font-bold">
+                        {index + 1}
+                      </span>
+                      <span className="text-ink-700 pt-1.5">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Warning Signs */}
+            {(summary.warning_signs || []).length > 0 && (
+              <div className="card p-6 bg-gradient-to-br from-rose-50/50 to-white">
+                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-rose-100 rounded-xl flex items-center justify-center">
+                    <FileCheck className="w-5 h-5 text-rose-600" />
+                  </div>
+                  Warning Signs
+                </h3>
+                <ul className="space-y-3">
+                  {(summary.warning_signs || []).map((item, index) => (
+                    <li
+                      key={index}
+                      className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
+                    >
+                      <span className="flex-shrink-0 w-7 h-7 bg-rose-100 text-rose-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                        {index + 1}
+                      </span>
+                      <span className="text-ink-700 pt-0.5">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* Follow-up */}
             {summary.follow_up && (
@@ -247,7 +296,9 @@ export default function SummaryPanel({
 
             {/* Disclaimer */}
             <div className="bg-surface-100 rounded-2xl p-6 text-center border border-surface-200">
-              <p className="text-sm text-ink-500">{PATIENT_DISCLAIMER}</p>
+              <p className="text-sm text-ink-500">
+                {summary.disclaimer || PATIENT_DISCLAIMER}
+              </p>
             </div>
           </div>
         )}
@@ -261,21 +312,30 @@ function buildNarrationText(summary: PatientSummary): string {
 
   parts.push("Here is a summary of your visit today.");
 
-  if (summary.what_you_told_us.length > 0) {
-    parts.push("What you told us: " + summary.what_you_told_us.join(". "));
+  if (summary.visit_summary) {
+    parts.push("Visit summary: " + summary.visit_summary);
   }
 
-  parts.push("What happened today: " + summary.what_happened_today);
+  if ((summary.diagnoses || []).length > 0) {
+    parts.push("Diagnoses: " + summary.diagnoses.join(". "));
+  }
 
-  if (summary.referrals.length > 0) {
+  if ((summary.treatment_plan || []).length > 0) {
+    parts.push("Treatment plan: " + summary.treatment_plan.join(". "));
+  }
+
+  if ((summary.medications || []).length > 0) {
+    parts.push("Medications: " + summary.medications.join(". "));
+  }
+
+  if ((summary.patient_instructions || []).length > 0) {
     parts.push(
-      "You have been referred to: " +
-        summary.referrals.map((r) => r.specialty).join(", ")
+      "Patient instructions: " + summary.patient_instructions.join(". ")
     );
   }
 
-  if (summary.next_steps.length > 0) {
-    parts.push("Your next steps are: " + summary.next_steps.join(". "));
+  if ((summary.warning_signs || []).length > 0) {
+    parts.push("Warning signs: " + summary.warning_signs.join(". "));
   }
 
   if (summary.follow_up) {

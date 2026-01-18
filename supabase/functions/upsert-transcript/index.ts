@@ -1,28 +1,33 @@
 // Upsert Transcript Edge Function
-// Processes transcription with AI - detects speaker and cleans text
-
+// Uses OpenAI for speaker detection, text cleanup, and real-time analysis
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { processTranscription, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
+import { processTranscript, callOpenAIJSON, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
 
 interface UpsertRequest {
   encounterId: string;
   text: string;
   timestamp?: number;
-  autoDetectSpeaker?: boolean;
+}
+
+interface SentenceAnalysis {
+  symptoms?: string[];
+  medications?: string[];
+  allergies?: string[];
+  duration?: string;
+  severity?: string;
+  urgency_flags?: string[];
 }
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 
   try {
     const body: UpsertRequest = await req.json();
-    const { encounterId, text, timestamp, autoDetectSpeaker = true } = body;
+    const { encounterId, text, timestamp } = body;
 
-    // Validate required fields
     if (!encounterId) {
       return errorResponse("encounterId is required");
     }
@@ -41,32 +46,21 @@ serve(async (req: Request) => {
       return errorResponse("Encounter not found", 404);
     }
 
-    // Get recent conversation context for better speaker detection
+    // Get recent context for better speaker detection
     const { data: recentChunks } = await supabaseAdmin
       .from("transcript_chunks")
       .select("speaker, text")
       .eq("encounter_id", encounterId)
       .order("created_at", { ascending: false })
-      .limit(5);
+      .limit(3);
 
-    const conversationContext = recentChunks
+    const context = recentChunks
       ?.reverse()
-      .map(c => `${c.speaker}: ${c.text}`)
+      .map((c) => `${c.speaker}: ${c.text}`)
       .join("\n") || "";
 
     // Process with OpenAI - detect speaker and clean text
-    let speaker = "staff";
-    let cleanedText = text.trim();
-
-    if (autoDetectSpeaker && isOpenAIConfigured()) {
-      try {
-        const processed = await processTranscription(text, conversationContext);
-        speaker = processed.speaker;
-        cleanedText = processed.text;
-      } catch (err) {
-        console.warn("AI processing failed, using raw text:", err);
-      }
-    }
+    const { speaker, text: cleanedText } = await processTranscript(text, context);
 
     // Skip empty or very short text
     if (!cleanedText || cleanedText.length < 2) {
@@ -74,7 +68,7 @@ serve(async (req: Request) => {
         id: null,
         success: true,
         skipped: true,
-        reason: "Text too short"
+        reason: "Text too short after cleaning",
       });
     }
 
@@ -85,7 +79,7 @@ serve(async (req: Request) => {
         encounter_id: encounterId,
         speaker,
         text: cleanedText,
-        timestamp_ms: timestamp || Date.now(),
+        timestamp_ms: timestamp ? Math.floor(timestamp / 1000) : null,
       })
       .select()
       .single();
@@ -95,15 +89,121 @@ serve(async (req: Request) => {
       return errorResponse("Failed to save transcript", 500);
     }
 
+    // Analyze sentence for medical data (in background, don't block response)
+    let sentenceAnalysis: SentenceAnalysis | null = null;
+    
+    if (isOpenAIConfigured() && speaker === "patient") {
+      // Only analyze patient statements for symptoms
+      try {
+        sentenceAnalysis = await analyzeSentence(cleanedText);
+        
+        // If analysis found something, update the fields artifact
+        if (sentenceAnalysis && hasContent(sentenceAnalysis)) {
+          await updateFieldsArtifact(encounterId, sentenceAnalysis);
+        }
+      } catch (e) {
+        console.error("Sentence analysis error:", e);
+        // Don't fail the request if analysis fails
+      }
+    }
+
     return jsonResponse({
       id: chunk.id,
       success: true,
       speaker,
       text: cleanedText,
       originalText: text,
+      analysis: sentenceAnalysis,
     });
   } catch (error) {
     console.error("Error:", error);
     return errorResponse("Internal server error", 500);
   }
 });
+
+// Analyze a single sentence for medical content
+async function analyzeSentence(text: string): Promise<SentenceAnalysis | null> {
+  const prompt = `Extract medical information from this patient statement. Only include items that are explicitly mentioned.
+
+Statement: "${text}"
+
+Return JSON only (empty arrays if nothing found):
+{
+  "symptoms": ["symptom mentioned"],
+  "medications": ["medication mentioned"],
+  "allergies": ["allergy mentioned"],
+  "duration": "duration if mentioned (e.g., '3 days', '2 weeks')",
+  "severity": "severity if mentioned (e.g., 'mild', 'severe', '7/10')",
+  "urgency_flags": ["concerning symptoms like chest pain, difficulty breathing, etc"]
+}`;
+
+  return await callOpenAIJSON<SentenceAnalysis>(prompt, {
+    systemPrompt: "Extract medical data from patient statements. Be precise and only include explicitly mentioned items. Return valid JSON only.",
+  });
+}
+
+// Check if analysis has any content
+function hasContent(analysis: SentenceAnalysis): boolean {
+  return Boolean(
+    (analysis.symptoms && analysis.symptoms.length > 0) ||
+    (analysis.medications && analysis.medications.length > 0) ||
+    (analysis.allergies && analysis.allergies.length > 0) ||
+    analysis.duration ||
+    analysis.severity ||
+    (analysis.urgency_flags && analysis.urgency_flags.length > 0)
+  );
+}
+
+// Update the fields artifact with new data from sentence analysis
+async function updateFieldsArtifact(encounterId: string, analysis: SentenceAnalysis) {
+  // Get existing fields
+  const { data: existingArtifact } = await supabaseAdmin
+    .from("artifacts")
+    .select("content")
+    .eq("encounter_id", encounterId)
+    .eq("type", "fields")
+    .single();
+
+  const existingFields = existingArtifact?.content || {};
+
+  // Merge new data (avoid duplicates)
+  const mergedFields = {
+    ...existingFields,
+    symptoms: mergeUnique(existingFields.symptoms || [], analysis.symptoms || []),
+    medications: mergeUnique(existingFields.medications || [], analysis.medications || []),
+    allergies: mergeUnique(existingFields.allergies || [], analysis.allergies || []),
+    urgency_indicators: mergeUnique(existingFields.urgency_indicators || [], analysis.urgency_flags || []),
+  };
+
+  // Update duration/severity if provided
+  if (analysis.duration && !existingFields.symptom_duration) {
+    mergedFields.symptom_duration = analysis.duration;
+  }
+  if (analysis.severity && !existingFields.symptom_severity) {
+    mergedFields.symptom_severity = analysis.severity;
+  }
+
+  // Upsert the artifact
+  await supabaseAdmin
+    .from("artifacts")
+    .upsert({
+      encounter_id: encounterId,
+      type: "fields",
+      content: mergedFields,
+    }, { onConflict: "encounter_id,type" });
+}
+
+// Merge arrays without duplicates (case-insensitive)
+function mergeUnique(existing: string[], newItems: string[]): string[] {
+  const lowerExisting = new Set(existing.map((s) => s.toLowerCase()));
+  const result = [...existing];
+  
+  for (const item of newItems) {
+    if (item && !lowerExisting.has(item.toLowerCase())) {
+      result.push(item);
+      lowerExisting.add(item.toLowerCase());
+    }
+  }
+  
+  return result;
+}

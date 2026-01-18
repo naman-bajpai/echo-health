@@ -1,16 +1,27 @@
 // Generate Summary Edge Function
-// Creates patient-facing visit summary
-
+// Uses Claude to create patient-friendly visit summaries
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { completeJson, isConfigured } from "../_shared/claude.ts";
-import { SYSTEM_PROMPT, PATIENT_SUMMARY_PROMPT, getPrompt } from "../_shared/prompts.ts";
-import { sanitizeOutput, addPatientDisclaimer, checkCompliance } from "../_shared/safety.ts";
-import type { GenerateSummaryRequest, PatientSummary, ExtractedFields } from "../_shared/types.ts";
+import { callClaudeJSON, isConfigured as isClaudeConfigured } from "../_shared/claude.ts";
+
+interface GenerateSummaryRequest {
+  encounterId: string;
+}
+
+interface PatientSummary {
+  visit_summary: string;
+  diagnoses: string[];
+  treatment_plan: string[];
+  medications: string[];
+  follow_up: string;
+  patient_instructions: string[];
+  warning_signs: string[];
+  generated_at: string;
+  disclaimer: string;
+}
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
 
@@ -22,19 +33,35 @@ serve(async (req: Request) => {
       return errorResponse("encounterId is required");
     }
 
-    // Fetch transcript chunks
-    const { data: chunks, error: transcriptError } = await supabaseAdmin
-      .from("transcript_chunks")
+    // Debug: Check if Claude is configured
+    const claudeConfigured = isClaudeConfigured();
+    console.log(`Claude API configured: ${claudeConfigured}`);
+
+    // Get encounter
+    const { data: encounter, error: encounterError } = await supabaseAdmin
+      .from("encounters")
       .select("*")
+      .eq("id", encounterId)
+      .single();
+
+    if (encounterError) {
+      console.error("Encounter fetch error:", encounterError);
+    }
+
+    // Get transcript
+    const { data: chunks, error: chunksError } = await supabaseAdmin
+      .from("transcript_chunks")
+      .select("speaker, text")
       .eq("encounter_id", encounterId)
       .order("created_at", { ascending: true });
 
-    if (transcriptError) {
-      console.error("Transcript error:", transcriptError);
-      return errorResponse("Failed to fetch transcript", 500);
+    if (chunksError) {
+      console.error("Transcript fetch error:", chunksError);
     }
 
-    // Fetch existing fields artifact
+    console.log(`Found ${chunks?.length || 0} transcript chunks`);
+
+    // Get extracted fields
     const { data: fieldsArtifact } = await supabaseAdmin
       .from("artifacts")
       .select("content")
@@ -44,165 +71,134 @@ serve(async (req: Request) => {
       .limit(1)
       .single();
 
-    // Fetch referral artifacts
-    const { data: referralArtifacts } = await supabaseAdmin
-      .from("artifacts")
-      .select("content")
-      .eq("encounter_id", encounterId)
-      .eq("type", "referral");
+    const transcriptText = chunks
+      ?.map((c) => `${c.speaker.toUpperCase()}: ${c.text}`)
+      .join("\n") || "";
 
-    // Build transcript text
-    const transcript = (chunks || [])
-      .map((c) => `[${c.speaker.toUpperCase()}]: ${c.text}`)
-      .join("\n");
+    const fields = fieldsArtifact?.content || {};
 
-    const fields: ExtractedFields = (fieldsArtifact?.content as ExtractedFields) || { symptoms: [] };
-    const fieldsJson = JSON.stringify(fields, null, 2);
+    console.log("Transcript text:", transcriptText.substring(0, 200));
+    console.log("Extracted fields:", JSON.stringify(fields).substring(0, 200));
 
-    let summary: PatientSummary;
+    let summary: PatientSummary = {
+      visit_summary: "",
+      diagnoses: [],
+      treatment_plan: [],
+      medications: [],
+      follow_up: "",
+      patient_instructions: [],
+      warning_signs: [],
+      generated_at: new Date().toISOString(),
+      disclaimer: "This summary is for informational purposes only and does not constitute medical advice. Always follow your healthcare provider's instructions.",
+    };
 
-    if (isConfigured() && transcript) {
-      // Use LLM to generate summary
-      const prompt = getPrompt(PATIENT_SUMMARY_PROMPT, {
-        transcript,
-        fields: fieldsJson,
-      });
-      summary = await completeJson<PatientSummary>(SYSTEM_PROMPT, prompt);
+    let aiUsed = false;
 
-      // Sanitize all text fields
-      summary.what_you_told_us = summary.what_you_told_us.map(sanitizeOutput);
-      summary.what_happened_today = sanitizeOutput(summary.what_happened_today);
-      summary.next_steps = summary.next_steps.map(sanitizeOutput);
-      if (summary.follow_up) {
-        summary.follow_up = sanitizeOutput(summary.follow_up);
-      }
+    if (claudeConfigured && transcriptText.length > 10) {
+      console.log("Calling Claude API for summary generation...");
+      
+      const prompt = `You are creating a patient-friendly visit summary. Write in clear, simple language that anyone can understand.
 
-      // Check compliance
-      const fullText = [
-        ...summary.what_you_told_us,
-        summary.what_happened_today,
-        ...summary.next_steps,
-        summary.follow_up || "",
-      ].join(" ");
+PATIENT: ${encounter?.patient_name || "Unknown"}
+REASON FOR VISIT: ${encounter?.reason_for_visit || "Not specified"}
 
-      const compliance = checkCompliance(fullText);
-      if (!compliance.isCompliant) {
-        console.warn("Compliance warnings in summary:", compliance.violations);
+TRANSCRIPT:
+${transcriptText}
+
+EXTRACTED INFORMATION:
+${JSON.stringify(fields, null, 2)}
+
+Create a summary that a patient can take home and understand. Use simple, non-medical language where possible.
+
+IMPORTANT RULES:
+- Do NOT make definitive diagnoses - use phrases like "discussed" or "being evaluated for"
+- Do NOT recommend specific treatments not discussed in the visit
+- Mark any clinical decisions as "[Pending doctor confirmation]"
+- Be warm and reassuring in tone
+- Include practical next steps
+- Base ALL content on the actual transcript - don't make up symptoms or treatments
+
+Respond with JSON only:
+{
+  "visit_summary": "Brief 2-3 sentence summary of the visit in friendly language based on actual transcript",
+  "diagnoses": ["[Pending doctor review] Conditions being evaluated or discussed in the transcript"],
+  "treatment_plan": ["Steps discussed for care and treatment in the conversation"],
+  "medications": ["Any medications discussed (with instructions if mentioned)"],
+  "follow_up": "When and how to follow up as discussed",
+  "patient_instructions": ["Clear instructions for the patient to follow at home"],
+  "warning_signs": ["Symptoms that should prompt calling the doctor or seeking emergency care"]
+}`;
+
+      const result = await callClaudeJSON<Partial<PatientSummary>>(prompt);
+      
+      if (result) {
+        console.log("Claude response received successfully");
+        summary = { ...summary, ...result };
+        aiUsed = true;
+      } else {
+        console.log("Claude returned no result, using fallback");
       }
     } else {
-      // Fallback: basic summary generation
-      summary = generateBasicSummary(chunks || [], fields, referralArtifacts || []);
+      console.log(`Using fallback (Claude configured: ${claudeConfigured}, transcript length: ${transcriptText.length})`);
     }
 
-    // Add referrals from artifacts
-    if (referralArtifacts && referralArtifacts.length > 0) {
-      summary.referrals = referralArtifacts.map((r) => {
-        const content = r.content as { provider: { specialty: string; name: string }; referral: { reason: string } };
-        return {
-          specialty: content.provider.specialty,
-          provider: content.provider.name,
-          reason: content.referral.reason,
-        };
-      });
+    // Fallback if AI didn't work
+    if (!aiUsed) {
+      const patientStatements = chunks
+        ?.filter(c => c.speaker === "patient")
+        .map(c => c.text)
+        .join(". ") || "";
+
+      summary.visit_summary = patientStatements 
+        ? `You visited today for ${encounter?.reason_for_visit || "your health concern"}. You mentioned: ${patientStatements.substring(0, 150)}...`
+        : `You visited today for ${encounter?.reason_for_visit || "your health concern"}. Your healthcare team documented your visit.`;
+      
+      summary.diagnoses = ["[Pending doctor review] Your condition is being evaluated"];
+      summary.treatment_plan = ["Follow up with your healthcare provider as directed"];
+      summary.medications = (fields as any).medications || [];
+      summary.follow_up = "Please follow up as directed by your healthcare provider.";
+      summary.patient_instructions = [
+        "Take any prescribed medications as directed",
+        "Rest and stay hydrated",
+        "Contact your healthcare provider if symptoms worsen",
+      ];
+      summary.warning_signs = [
+        "Severe or worsening pain",
+        "High fever (over 101°F / 38.3°C)",
+        "Difficulty breathing",
+        "Any symptoms that concern you",
+      ];
     }
 
-    // Store as artifact
-    const { data: artifact, error: artifactError } = await supabaseAdmin
-      .from("artifacts")
-      .insert({
-        encounter_id: encounterId,
-        type: "summary",
-        content: {
-          ...summary,
-          generated_at: new Date().toISOString(),
-        },
-      })
-      .select()
-      .single();
+    // Save as artifact
+    const { error: artifactError } = await supabaseAdmin.from("artifacts").insert({
+      encounter_id: encounterId,
+      type: "summary",
+      content: summary,
+    });
 
     if (artifactError) {
-      console.error("Artifact error:", artifactError);
-      return errorResponse("Failed to save summary", 500);
+      console.error("Artifact save error:", artifactError);
     }
 
-    // Update encounter status to checkout
+    // Update encounter status
     await supabaseAdmin
       .from("encounters")
       .update({ status: "checkout" })
       .eq("id", encounterId);
 
     return jsonResponse({
-      artifactId: artifact.id,
       summary,
-      formatted: addPatientDisclaimer(formatSummary(summary)),
+      encounterId,
+      debug: {
+        claudeConfigured,
+        aiUsed,
+        transcriptChunks: chunks?.length || 0,
+        hasExtractedFields: !!fieldsArtifact,
+      },
     });
   } catch (error) {
     console.error("Error:", error);
-    return errorResponse("Internal server error", 500);
+    return errorResponse(`Internal server error: ${error}`, 500);
   }
 });
-
-/**
- * Generate basic summary without LLM
- */
-function generateBasicSummary(
-  chunks: Array<{ speaker: string; text: string }>,
-  fields: ExtractedFields,
-  _referralArtifacts: Array<{ content: unknown }>
-): PatientSummary {
-  const patientStatements = chunks
-    .filter((c) => c.speaker === "patient")
-    .map((c) => c.text)
-    .slice(0, 5);
-
-  return {
-    what_you_told_us: patientStatements.length > 0
-      ? patientStatements
-      : ["Your concerns were discussed during the visit."],
-    what_happened_today: fields.reason_for_visit
-      ? `You visited for: ${fields.reason_for_visit}. Your concerns were reviewed and discussed.`
-      : "Your healthcare provider reviewed your concerns during this visit.",
-    referrals: [],
-    next_steps: [
-      "Follow up as recommended by your healthcare provider",
-      "Contact us if you have any questions",
-    ],
-  };
-}
-
-/**
- * Format summary for display
- */
-function formatSummary(summary: PatientSummary): string {
-  let text = "## Your Visit Summary\n\n";
-
-  text += "### What You Told Us\n";
-  for (const item of summary.what_you_told_us) {
-    text += `- ${item}\n`;
-  }
-  text += "\n";
-
-  text += "### What Happened Today\n";
-  text += `${summary.what_happened_today}\n\n`;
-
-  if (summary.referrals.length > 0) {
-    text += "### Referrals\n";
-    for (const referral of summary.referrals) {
-      text += `- **${referral.specialty}**`;
-      if (referral.provider) text += ` (${referral.provider})`;
-      text += `: ${referral.reason}\n`;
-    }
-    text += "\n";
-  }
-
-  text += "### Next Steps\n";
-  for (const step of summary.next_steps) {
-    text += `- ${step}\n`;
-  }
-
-  if (summary.follow_up) {
-    text += `\n### Follow-up\n${summary.follow_up}\n`;
-  }
-
-  return text;
-}
