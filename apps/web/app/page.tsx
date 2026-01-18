@@ -1,278 +1,319 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/lib/auth";
+import { useRef, useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import logo from "@/logo.png";
+import { 
+  motion, 
+  useScroll, 
+  useTransform, 
+  MotionValue,
+} from "framer-motion";
 import {
-  Mic,
   Brain,
-  FileText,
   ArrowRight,
-  Stethoscope,
-  BadgeCheck,
-  AlertCircle,
   Sparkles,
+  FileText,
+  Shield,
+  Mic,
+  Zap,
+  FileDown,
+  Hash,
+  Menu,
+  X,
+  Lock,
+  Radio,
   Waves,
-  ClipboardCheck,
-  ChevronRight,
 } from "lucide-react";
 
+// Helper for conditional classes
+const cn = (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(" ");
+
 export default function HomePage() {
-  const router = useRouter();
-  const { setRole } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<"nurse" | "doctor">("nurse");
-  const [userName, setUserName] = useState("");
-  const [isHovering, setIsHovering] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isMdUp, setIsMdUp] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const flowRef = useRef<HTMLElement | null>(null);
 
-  const handleStart = () => {
-    setRole(selectedRole, userName || undefined);
-    router.push("/dashboard");
-  };
+  const { scrollYProgress: flowProgress } = useScroll({
+    target: flowRef,
+    offset: ["start end", "end start"], // Start tracking when section enters viewport from bottom
+  });
 
-  const features = [
-    {
-      icon: Waves,
-      title: "Voice Intelligence",
-      description: "Automatic speaker detection with real-time transcription",
-      gradient: "from-primary-500 to-primary-600",
-    },
-    {
-      icon: Brain,
-      title: "Smart Extraction",
-      description: "AI extracts symptoms, medications, and allergies instantly",
-      gradient: "from-accent-500 to-accent-600",
-    },
-    {
-      icon: AlertCircle,
-      title: "Urgency Triage",
-      description: "Intelligent flagging of urgent cases and specialist needs",
-      gradient: "from-amber-500 to-orange-500",
-    },
-    {
-      icon: ClipboardCheck,
-      title: "Compliant Notes",
-      description: "Generate SOAP notes that meet documentation standards",
-      gradient: "from-sage-500 to-sage-600",
-    },
-  ];
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const update = () => setIsMdUp(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // Linear flow animations - start immediately on scroll
+  const hubScale = useTransform(flowProgress, [0, 0.25], [0.8, 1]);
+  const hubOpacity = useTransform(flowProgress, [0, 0.2], [0, 1]);
+  const cardOpacity = useTransform(flowProgress, [0.15, 0.35], [0, 1]);
+  
+  // Audio input animation
+  const audioOpacity = useTransform(flowProgress, [0, 0.15], [0, 1]);
 
   return (
-    <div className="min-h-screen bg-white relative overflow-hidden">
-      {/* Background decorative elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary-300/25 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 -left-20 w-60 h-60 bg-accent-300/20 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 right-1/4 w-40 h-40 bg-primary-400/25 rounded-full blur-2xl" />
+    <div className="min-h-screen bg-white font-sans text-ink-900 overflow-x-hidden relative">
+      {/* Theme Gradient Overlay */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+        <div className="absolute top-0 left-0 w-full h-screen bg-gradient-to-b from-primary-50/15 via-white to-white" />
+        <div className="absolute top-[20%] right-[-8%] w-[40%] h-[40%] bg-primary-200/8 rounded-full blur-[140px]" />
+        <div className="absolute bottom-[20%] left-[-8%] w-[40%] h-[40%] bg-accent-200/8 rounded-full blur-[140px]" />
       </div>
 
-      {/* Header */}
-      <header className="relative z-10 border-b border-primary-100/30 bg-white/80 backdrop-blur-xl">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex items-center justify-center h-20">
-            <Image
-              src={logo}
-              alt="Echo Health logo"
-              width={234}
-              height={69}
-              className="h-14 w-auto"
-              priority
-            />
+      {/* Navbar */}
+      <nav className={cn(
+        "fixed top-0 left-0 right-0 z-50 transition-all duration-500 px-6 sm:px-12 flex items-center justify-center",
+        isScrolled ? "pt-4" : "pt-8"
+      )}>
+        <div className={cn(
+          "max-w-5xl w-full flex items-center justify-between px-6 py-3 rounded-full transition-all duration-500",
+          isScrolled 
+            ? "bg-white/80 backdrop-blur-2xl border border-surface-200/50 shadow-soft-xl" 
+            : "bg-transparent border border-transparent"
+        )}>
+          <Link href="/" className="flex items-center gap-2 relative z-10">
+            <Image src={logo} alt="Echo Health" width={110} height={32} className="h-7 w-auto" priority />
+          </Link>
+          
+          <div className="hidden md:flex items-center gap-8">
+            <Link href="#how-it-works" className="text-[11px] font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors">Technology</Link>
+            <Link href="/dashboard" className="text-[11px] font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors flex items-center gap-2">
+              <Lock className="w-3 h-3" />
+              Portal
+            </Link>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Link 
+              href="/dashboard" 
+              className="px-6 py-2 bg-ink-950 text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-soft hover:bg-primary-600 hover:-translate-y-0.5 transition-all"
+            >
+              Get Started
+            </Link>
+            <button 
+              className="md:hidden p-2 text-ink-900"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* Hero */}
-      <section className="relative z-10 py-20 px-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-16 items-center">
-            {/* Left - Content */}
-            <div className="space-y-8">
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full border border-primary-200 shadow-soft">
-                <Sparkles className="w-4 h-4 text-primary-500" />
-                <span className="text-sm font-medium text-ink-900">
-                  AI-Powered Healthcare Documentation
-                </span>
-              </div>
+      {/* Hero Section */}
+      <section className="relative h-screen flex items-center justify-center px-8">
+        <div className="max-w-4xl mx-auto text-center space-y-10 relative z-10">
+          <motion.div 
+            initial={{ opacity: 0, y: 15 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="inline-flex items-center gap-2 px-4 py-1.5 bg-white/50 border border-surface-200 rounded-full shadow-soft-sm backdrop-blur-sm"
+          >
+            <Sparkles className="w-3 h-3 text-primary-500" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-ink-400">Ambient Clinical Intelligence</span>
+          </motion.div>
 
-              <h1 className="text-5xl lg:text-6xl font-bold text-ink-950 leading-[1.1] tracking-tight">
-                Document patient encounters with{" "}
-                <span className="relative">
-                  <span className="relative z-10 bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">precision</span>
-                  <svg className="absolute -bottom-2 left-0 w-full h-3 text-primary-300" viewBox="0 0 200 12" preserveAspectRatio="none">
-                    <path d="M0,8 Q50,0 100,8 T200,8" stroke="currentColor" strokeWidth="4" fill="none" strokeLinecap="round"/>
-                  </svg>
-                </span>
-              </h1>
+          <div className="space-y-6">
+            <motion.h1 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="text-7xl md:text-8xl font-black tracking-tighter text-ink-950 leading-[0.85]"
+            >
+              The focus belongs <br />
+              <span className="gradient-text italic">to the patient.</span>
+            </motion.h1>
 
-              <p className="text-xl text-ink-700 leading-relaxed max-w-lg">
-                Real-time transcription that listens, understands context, and generates compliant documentation — letting you focus on what matters most.
-              </p>
+            <motion.p 
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+              className="text-xl md:text-2xl text-ink-500 font-medium max-w-2xl mx-auto leading-relaxed"
+            >
+              Echo Health transforms encounters into records in real-time. No typing. No distractions. Just medicine.
+            </motion.p>
+          </div>
 
-              {/* Feature Pills */}
-              <div className="flex flex-wrap gap-3">
-                {["Live Transcription", "Speaker Detection", "Urgency Flags", "SOAP Notes"].map((item) => (
-                  <span
-                    key={item}
-                    className="px-4 py-2 bg-gradient-to-r from-primary-50 to-accent-50 text-ink-900 rounded-full text-sm font-medium border border-primary-200"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+            <Link 
+              href="/get-started" 
+              className="px-10 py-5 bg-ink-950 text-white rounded-2xl font-black text-[14px] uppercase tracking-widest shadow-soft-xl hover:bg-primary-600 hover:-translate-y-1 transition-all group w-full sm:w-auto flex items-center justify-center gap-3"
+            >
+              Get Started
+              <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <Link href="#how-it-works" className="px-10 py-5 bg-white text-ink-950 border border-surface-200 rounded-2xl font-black text-[14px] uppercase tracking-widest hover:bg-surface-50 transition-all w-full sm:w-auto">
+              See the Flow
+            </Link>
+          </div>
+        </div>
 
-            {/* Right - Login Card */}
-            <div className="lg:pl-8">
-              <div 
-                className="relative bg-white rounded-[2rem] shadow-soft-xl p-10 border border-primary-100"
-                onMouseEnter={() => setIsHovering(true)}
-                onMouseLeave={() => setIsHovering(false)}
-              >
-                {/* Decorative corner */}
-                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-primary-200 to-transparent rounded-tr-[2rem] rounded-bl-[4rem]" />
-                
-                <div className="relative z-10">
-                  <h2 className="text-2xl font-bold text-ink-800 mb-2">
-                    Get Started
-                  </h2>
-                  <p className="text-ink-500 mb-8">
-                    Select your role to begin documenting
-                  </p>
+        <motion.div 
+          animate={{ y: [0, 10, 0] }}
+          transition={{ duration: 2, repeat: Infinity }}
+          className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 opacity-20"
+        >
+          <div className="w-px h-12 bg-ink-900" />
+        </motion.div>
+      </section>
 
-                  {/* Name Input */}
-                  <div className="mb-6">
-                    <label className="block text-sm font-bold text-ink-900 mb-2">
-                      Your Name
-                    </label>
-                    <input
-                      type="text"
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
-                      placeholder="Enter your name"
-                      className="input-minimal"
-                    />
-                  </div>
+      {/* Linear Flow Diagram - Audio → AI → Outputs */}
+      <section ref={flowRef} id="how-it-works" className="relative h-[100vh] sm:h-[110vh] w-full py-12">
+        <div className="sticky top-0 h-screen w-full flex items-center justify-center overflow-hidden">
+          {/* Background Grid Pattern */}
+          <div className="absolute inset-0 opacity-[0.02]">
+            <div className="absolute inset-0" style={{
+              backgroundImage: `radial-gradient(circle, #000 1px, transparent 1px)`,
+              backgroundSize: '40px 40px'
+            }} />
+          </div>
 
-                  {/* Role Selection */}
-                  <div className="mb-8">
-                    <label className="block text-sm font-bold text-ink-900 mb-3">
-                      Select Your Role
-                    </label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        onClick={() => setSelectedRole("nurse")}
-                        className={`relative p-5 rounded-2xl border-2 transition-all duration-300 ${
-                          selectedRole === "nurse"
-                            ? "border-primary-500 bg-gradient-to-br from-primary-50 to-accent-50 shadow-glow"
-                            : "border-surface-200 bg-white hover:border-primary-300 hover:bg-primary-50/30"
-                        }`}
-                      >
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors ${
-                          selectedRole === "nurse" ? "bg-gradient-to-br from-primary-500 to-primary-600" : "bg-surface-100"
-                        }`}>
-                          <BadgeCheck className={`w-6 h-6 ${selectedRole === "nurse" ? "text-white" : "text-ink-600"}`} />
-                        </div>
-                        <span className={`font-bold block ${selectedRole === "nurse" ? "text-primary-700" : "text-ink-900"}`}>
-                          Nurse
-                        </span>
-                        <span className="text-xs text-ink-600">RN, LPN, NP</span>
-                        {selectedRole === "nurse" && (
-                          <div className="absolute top-3 right-3 w-6 h-6 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center shadow-lg">
-                            <ChevronRight className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => setSelectedRole("doctor")}
-                        className={`relative p-5 rounded-2xl border-2 transition-all duration-300 ${
-                          selectedRole === "doctor"
-                            ? "border-primary-500 bg-gradient-to-br from-primary-50 to-accent-50 shadow-glow"
-                            : "border-surface-200 bg-white hover:border-primary-300 hover:bg-primary-50/30"
-                        }`}
-                      >
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors ${
-                          selectedRole === "doctor" ? "bg-gradient-to-br from-primary-500 to-primary-600" : "bg-surface-100"
-                        }`}>
-                          <Stethoscope className={`w-6 h-6 ${selectedRole === "doctor" ? "text-white" : "text-ink-600"}`} />
-                        </div>
-                        <span className={`font-bold block ${selectedRole === "doctor" ? "text-primary-700" : "text-ink-900"}`}>
-                          Doctor
-                        </span>
-                        <span className="text-xs text-ink-600">MD, DO</span>
-                        {selectedRole === "doctor" && (
-                          <div className="absolute top-3 right-3 w-6 h-6 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center shadow-lg">
-                            <ChevronRight className="w-4 h-4 text-white" />
-                          </div>
-                        )}
-                      </button>
+          {/* Linear Flow: Audio → AI → Outputs */}
+          <div className="relative z-30 max-w-7xl mx-auto px-8 w-full">
+            <div className="flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-12">
+              
+              {/* Step 1 & 2 Group (The Process) */}
+              <div className="flex flex-col md:flex-row items-center gap-6 lg:gap-8">
+                {/* Step 1: Audio Input */}
+                <motion.div
+                  style={{ 
+                    opacity: audioOpacity,
+                    x: useTransform(flowProgress, [0, 0.15], [-20, 0]),
+                  }}
+                  className="relative"
+                >
+                  <div className="bg-white/95 backdrop-blur-xl p-6 rounded-[2rem] border border-surface-200 shadow-soft-xl flex flex-col items-center gap-4 w-44 sm:w-48 group hover:border-primary-300 transition-all duration-500">
+                    <div className="flex items-center gap-1.5 h-10">
+                      {[0, 1, 2, 3, 4].map((i) => (
+                        <motion.div
+                          key={i}
+                          animate={{ 
+                            height: [8, 24, 8],
+                            opacity: [0.5, 1, 0.5]
+                          }}
+                          transition={{ 
+                            duration: 1, 
+                            repeat: Infinity, 
+                            delay: i * 0.15,
+                            ease: "easeInOut"
+                          }}
+                          className="w-1.5 bg-primary-500 rounded-full"
+                        />
+                      ))}
+                    </div>
+                    <div className="text-center space-y-1">
+                      <h4 className="font-black text-ink-950 text-sm tracking-tight">Live Audio</h4>
+                      <p className="text-[10px] font-bold text-ink-400 uppercase tracking-wider">Patient Encounter</p>
                     </div>
                   </div>
+                </motion.div>
 
-                  <button
-                    onClick={handleStart}
-                    className="w-full py-4 bg-gradient-to-r from-primary-500 via-primary-600 to-primary-700 hover:from-primary-600 hover:via-primary-700 hover:to-primary-800 text-white font-bold text-lg rounded-2xl shadow-lg hover:shadow-glow transition-all duration-300 flex items-center justify-center gap-3 group"
-                  >
-                    Enter Dashboard
-                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                  </button>
-                </div>
+                <ArrowRight className="w-6 h-6 text-primary-300 rotate-90 md:rotate-0 opacity-50" />
+
+                {/* Step 2: AI Processing */}
+                <motion.div 
+                  style={{ 
+                    scale: hubScale,
+                    opacity: hubOpacity,
+                  }}
+                  className="relative"
+                >
+                  <div className="bg-white/95 backdrop-blur-xl p-6 rounded-[2rem] border border-surface-200 shadow-soft-xl flex flex-col items-center gap-4 w-44 sm:w-48 group hover:border-primary-300 transition-all duration-500">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-indigo-700 flex items-center justify-center shadow-lg">
+                      <Brain className="w-7 h-7 text-white" />
+                    </div>
+                    <div className="text-center space-y-1">
+                      <h4 className="font-black text-ink-950 text-sm tracking-tight">AI Processing</h4>
+                      <div className="flex items-center justify-center gap-1.5 px-2 py-0.5 bg-primary-50 rounded-full">
+                        <span className="h-1 w-1 rounded-full bg-primary-500 animate-pulse" />
+                        <p className="text-[9px] font-black text-primary-600 uppercase tracking-widest">Active</p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
               </div>
+
+              <ArrowRight className="w-8 h-8 text-primary-400 rotate-90 lg:rotate-0 opacity-30 hidden sm:block" />
+
+              {/* Step 3: Output Artifacts - Structured Grid */}
+              <motion.div
+                style={{
+                  opacity: cardOpacity,
+                  x: useTransform(flowProgress, [0.15, 0.35], [20, 0]),
+                }}
+                className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-3xl"
+              >
+                {[
+                  { icon: FileText, title: "SOAP Notes", desc: "Clinical Documentation", color: "text-primary-600", bg: "bg-primary-50" },
+                  { icon: Hash, title: "Billing Codes", desc: "ICD-10 & CPT", color: "text-purple-600", bg: "bg-purple-50" },
+                  { icon: FileDown, title: "Summaries", desc: "Patient Recaps", color: "text-rose-600", bg: "bg-rose-50" },
+                  { icon: Brain, title: "Clinical Focus", desc: "Differential Dx", color: "text-emerald-600", bg: "bg-emerald-50" },
+                  { icon: Shield, title: "Safety Alerts", desc: "Red Flags", color: "text-amber-600", bg: "bg-amber-50" },
+                ].map((item, idx) => (
+                  <motion.div
+                    key={idx}
+                    style={{
+                      opacity: useTransform(flowProgress, [0.2 + idx * 0.04, 0.4 + idx * 0.04], [0, 1]),
+                      scale: useTransform(flowProgress, [0.2 + idx * 0.04, 0.4 + idx * 0.04], [0.85, 1]),
+                    }}
+                    className={cn(
+                      "bg-white/95 backdrop-blur-xl p-5 rounded-2xl border border-surface-200 shadow-soft flex flex-col items-center gap-3 w-40 sm:w-44 group hover:border-primary-300 hover:shadow-soft-xl transition-all duration-500",
+                      idx === 3 && "sm:col-start-1 sm:ml-auto", // Center the bottom two on desktop
+                      idx === 4 && "sm:col-start-2 sm:mr-auto"
+                    )}
+                  >
+                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shadow-inner-soft", item.bg, item.color)}>
+                      <item.icon className="w-5 h-5" />
+                    </div>
+                    <div className="text-center space-y-0.5">
+                      <h4 className="font-black text-ink-950 text-xs sm:text-sm tracking-tight leading-tight">{item.title}</h4>
+                      <p className="text-[9px] font-bold text-ink-400 uppercase tracking-wider">{item.desc}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="relative z-10 py-20 px-6 bg-gradient-to-b from-white to-primary-50/30 border-t border-primary-100">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-ink-950 mb-4">
-              Everything you need for efficient documentation
-            </h2>
-            <p className="text-lg text-ink-700 max-w-2xl mx-auto">
-              Built for healthcare professionals who value their time and patients
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className="group relative bg-white rounded-3xl p-8 border border-primary-100 hover:border-primary-300 hover:shadow-soft-lg transition-all duration-300"
-              >
-                <div className={`w-14 h-14 bg-gradient-to-br ${feature.gradient} rounded-2xl flex items-center justify-center mb-6 shadow-md group-hover:scale-110 transition-transform duration-300`}>
-                  <feature.icon className="w-7 h-7 text-white" />
-                </div>
-                <h3 className="text-lg font-bold text-ink-950 mb-2">
-                  {feature.title}
-                </h3>
-                <p className="text-ink-700 text-sm leading-relaxed">
-                  {feature.description}
-                </p>
-              </div>
-            ))}
-          </div>
+      {/* Massive Footer */}
+      <footer className="relative z-10 pt-32 pb-12 flex flex-col items-center justify-center bg-white border-t border-surface-100 overflow-hidden">
+        <div className="w-full text-center">
+          <motion.h2 
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+            className="text-[18vw] font-black leading-[0.8] tracking-tighter uppercase select-none bg-gradient-to-b from-ink-200 to-transparent bg-clip-text text-transparent"
+          >
+            Echo Health
+          </motion.h2>
         </div>
-      </section>
-
-      {/* Footer */}
-      <footer className="relative z-10 py-8 px-6 border-t border-primary-100 bg-white">
-        <div className="max-w-6xl mx-auto text-center">
-          <div className="flex items-center justify-center mb-3">
-            <Image
-              src={logo}
-              alt="Echo Health logo"
-              width={156}
-              height={46}
-              className="h-9 w-auto"
-            />
+        <div className="mt-12 flex flex-col items-center gap-4">
+          <div className="flex items-center gap-8">
+            <div className="h-px w-12 bg-surface-200" />
+            <p className="text-[10px] font-black text-ink-300 uppercase tracking-[0.6em]">
+              &copy; 2026 Echo Health
+            </p>
+            <div className="h-px w-12 bg-surface-200" />
           </div>
-          <p className="text-sm text-ink-700">
-            Built for Nexhacks 2026 — Healthcare documentation, reimagined.
-          </p>
         </div>
       </footer>
     </div>
