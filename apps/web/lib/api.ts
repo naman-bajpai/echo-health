@@ -354,6 +354,36 @@ export async function generateBillingCodes(
 }
 
 /**
+ * Verify AI-generated data with Claude API
+ * Double-checks accuracy of ChatGPT-generated content
+ */
+export async function verifyWithClaude(
+  encounterId: string
+): Promise<{
+  success: boolean;
+  verification: {
+    verified: boolean;
+    confidence: "high" | "medium" | "low";
+    corrections: Array<{
+      field: string;
+      original: string;
+      corrected: string;
+      reason: string;
+    }>;
+    warnings: string[];
+    suggestions: string[];
+    summary: string;
+    verificationTimestamp: string;
+  };
+  encounterId: string;
+  correctionsApplied: boolean;
+}> {
+  return callFunction("verify-with-claude", {
+    encounterId,
+  });
+}
+
+/**
  * Log trace event
  */
 export async function logTrace(

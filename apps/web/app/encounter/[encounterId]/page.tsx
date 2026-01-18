@@ -34,6 +34,8 @@ import {
   generateReferralPdf,
   generateLiveQuestions,
   updateEncounterUrgency,
+  generateBillingCodes,
+  verifyWithClaude,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/auth";
@@ -55,6 +57,7 @@ import {
   Sparkles,
   Brain,
   ShieldAlert,
+  ShieldCheck,
   Activity,
   ChevronDown,
 } from "lucide-react";
@@ -98,6 +101,15 @@ export default function EncounterPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<{
+    verified: boolean;
+    confidence: "high" | "medium" | "low";
+    corrections: Array<{ field: string; original: string; corrected: string; reason: string }>;
+    warnings: string[];
+    suggestions: string[];
+    summary: string;
+  } | null>(null);
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAiMenu, setShowAiMenu] = useState(false);
@@ -315,6 +327,46 @@ export default function EncounterPage() {
     }
   }, [encounterId]);
 
+  const handleVerifyWithClaude = useCallback(async () => {
+    setIsVerifying(true);
+    setShowAiMenu(false);
+    try {
+      const result = await verifyWithClaude(encounterId);
+      if (result.success && result.verification) {
+        setVerificationResult(result.verification);
+        
+        // If corrections were applied, reload the data
+        if (result.correctionsApplied) {
+          const updated = await getEncounter(encounterId);
+          if (updated) setEncounter(updated);
+          
+          // Reload artifacts to get updated fields
+          const { data: artifacts } = await supabase
+            .from("artifacts")
+            .select("content, type")
+            .eq("encounter_id", encounterId);
+          
+          if (artifacts) {
+            artifacts.forEach(art => {
+              if (art.type === "fields") setFields(art.content as ExtractedFields);
+            });
+          }
+        }
+        
+        if (result.verification.verified) {
+          showSuccess(`Data verified by Claude (${result.verification.confidence} confidence). ${result.verification.corrections.length} corrections applied.`);
+        } else {
+          showError(`Verification found issues: ${result.verification.summary}`);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to verify with Claude:", err);
+      showError("Failed to verify data with Claude. Please try again.");
+    } finally {
+      setIsVerifying(false);
+    }
+  }, [encounterId, showError, showSuccess]);
+
   const handleAddTranscript = useCallback(async (text: string) => {
     const result = await upsertTranscript(encounterId, text);
     // Mark as transcribing when new transcript arrives
@@ -490,9 +542,24 @@ export default function EncounterPage() {
     }
   }, [encounterId, showError, showSuccess]);
   const handleDownloadPdf = useCallback(async () => {
-    const result = await getSummaryPdfUrl(encounterId);
-    window.open(result.pdfUrl, "_blank");
-  }, [encounterId]);
+    try {
+      // Ensure billing codes are generated before downloading PDF
+      if (!billingCodes) {
+        showSuccess("Generating billing codes for PDF...");
+        const billingResult = await generateBillingCodes(encounterId);
+        if (billingResult.billingCodes) {
+          setBillingCodes(billingResult.billingCodes);
+        }
+      }
+      
+      const result = await getSummaryPdfUrl(encounterId);
+      window.open(result.pdfUrl, "_blank");
+      showSuccess("PDF generated successfully");
+    } catch (err) {
+      console.error("Failed to download PDF:", err);
+      showError("Failed to generate PDF. Please try again.");
+    }
+  }, [encounterId, billingCodes, showSuccess, showError]);
   const handleNarrate = useCallback(async (t: string) => {
     const result = await narrateExplanation(t, encounterId);
     if (result.audioUrl || result.audioData) {
@@ -566,15 +633,15 @@ export default function EncounterPage() {
             <div className="relative">
               <button 
                 onClick={() => setShowAiMenu(!showAiMenu)}
-                disabled={isAnalyzing || isGeneratingAll}
+                disabled={isAnalyzing || isGeneratingAll || isVerifying}
                 className={`
                   flex items-center gap-2 px-4 py-2 rounded-2xl font-bold text-sm transition-all
-                  ${(isAnalyzing || isGeneratingAll) 
+                  ${(isAnalyzing || isGeneratingAll || isVerifying) 
                     ? "bg-surface-100 text-ink-400 cursor-not-allowed" 
                     : "bg-primary-500 text-white shadow-glow hover:bg-primary-600"}
                 `}
               >
-                {(isAnalyzing || isGeneratingAll) ? (
+                {(isAnalyzing || isGeneratingAll || isVerifying) ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <Brain className="w-4 h-4" />
@@ -613,6 +680,37 @@ export default function EncounterPage() {
                       <p className="text-sm font-bold text-ink-900">Generate All Artifacts</p>
                       <p className="text-2xs text-ink-400">SOAP note & Patient summary</p>
                     </div>
+                  </button>
+
+                  <div className="mx-4 my-2 border-t border-surface-100" />
+
+                  <button 
+                    onClick={handleVerifyWithClaude}
+                    disabled={isVerifying}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-emerald-50 transition-colors text-left"
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                      {isVerifying ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <ShieldCheck className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-ink-900">
+                        {isVerifying ? "Verifying..." : "Verify with Claude"}
+                      </p>
+                      <p className="text-2xs text-ink-400">Double-check AI accuracy</p>
+                    </div>
+                    {verificationResult && (
+                      <div className={`ml-auto px-2 py-0.5 rounded-full text-2xs font-bold ${
+                        verificationResult.verified 
+                          ? "bg-emerald-100 text-emerald-700" 
+                          : "bg-amber-100 text-amber-700"
+                      }`}>
+                        {verificationResult.verified ? "Verified" : "Issues Found"}
+                      </div>
+                    )}
                   </button>
                 </div>
               )}

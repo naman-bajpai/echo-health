@@ -123,9 +123,15 @@ export default function CheckoutPage() {
 
   const handleDownloadPdf = async () => {
     try {
+      // Ensure billing codes exist before downloading PDF
+      if (!billingCodes) {
+        showSuccess("Generating billing codes for PDF...");
+        await handleGenerateBillingCodes();
+      }
+      
       const result = await getSummaryPdfUrl(encounterId);
       window.open(result.pdfUrl, "_blank");
-      showSuccess("PDF download started");
+      showSuccess("PDF downloaded with billing codes");
     } catch (err) {
       console.error("Failed to download PDF:", err);
       showError("Failed to download PDF. Please try again.");
