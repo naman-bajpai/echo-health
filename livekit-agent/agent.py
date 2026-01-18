@@ -1,170 +1,310 @@
 """
 LiveKit Agent for Echo Health
-Real-time transcription agent for healthcare encounters
+Real-time transcription and note generation agent for healthcare encounters
+Based on the note-taking-assistant implementation pattern
 """
-from dotenv import load_dotenv
+import base64
 import os
-import json
 import logging
 import asyncio
+import json
+import re
+from pathlib import Path
+from dotenv import load_dotenv
+from livekit.agents import JobContext, WorkerOptions, cli, metrics
+from livekit.agents.voice import Agent, AgentSession, MetricsCollectedEvent
+from livekit.agents.llm import ChatContext, ChatMessage
+from livekit.plugins import openai, silero, deepgram
+from livekit.agents.telemetry import set_tracer_provider
+from typing import List
 
-from livekit import agents, rtc
-from livekit.agents import (
-    JobContext,
-    WorkerOptions,
-    cli,
-    AutoSubscribe,
-)
-from livekit.plugins import deepgram, silero
+load_dotenv(dotenv_path=Path(__file__).parent / '.env')
+usage_collector = metrics.UsageCollector()
+logger = logging.getLogger("echo_health_agent")
+logger.setLevel(logging.INFO)
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-load_dotenv()
+def setup_langfuse(
+    host: str | None = None, public_key: str | None = None, secret_key: str | None = None
+):
+    """Setup Langfuse tracing if configured"""
+    try:
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+        public_key = public_key or os.getenv("LANGFUSE_PUBLIC_KEY")
+        secret_key = secret_key or os.getenv("LANGFUSE_SECRET_KEY")
+        host = host or os.getenv("LANGFUSE_HOST")
+
+        if not public_key or not secret_key or not host:
+            logger.info("Langfuse not configured, skipping telemetry setup")
+            return
+
+        langfuse_auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
+        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{host.rstrip('/')}/api/public/otel"
+        os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {langfuse_auth}"
+
+        trace_provider = TracerProvider()
+        trace_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+        set_tracer_provider(trace_provider)
+        logger.info("✅ Langfuse telemetry configured")
+    except Exception as e:
+        logger.warning(f"Failed to setup Langfuse: {e}")
+
+
+class EchoHealthAssistant:
+    """Real-time transcription and note generation assistant for Echo Health"""
+    
+    def __init__(self, ctx: JobContext):
+        self.transcriptions: List[str] = []
+        self.current_notes: str = ""
+        self.note_update_task = None
+        # Keep a running copy of the full transcript text
+        self.full_transcript: str = ""
+        # Remember the last transcription snippet sent to the frontend to avoid duplicates
+        self._last_transcription_sent: str = ""
+        # Create LLM instance - use OpenAI by default, or Cerebras if configured
+        llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        if llm_provider == "cerebras":
+            self.llm = openai.LLM.with_cerebras(model=os.getenv("CEREBRAS_MODEL", "gpt-oss-120b"))
+        else:
+            # Use OpenAI GPT-4 or GPT-3.5
+            model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            self.llm = openai.LLM(model=model)
+        # Store context for RPC communication
+        self.ctx = ctx
+
+    def build_display_transcript(self, partial: str | None = None, max_sentences: int = 3) -> str:
+        """Return a trimmed transcript preview for the frontend."""
+        segments: List[str] = []
+        if self.full_transcript.strip():
+            segments.append(self.full_transcript.strip())
+        if partial and partial.strip():
+            segments.append(partial.strip())
+
+        combined = " ".join(segments).strip()
+        if not combined:
+            return ""
+
+        sentences = [match.group().strip() for match in re.finditer(r'[^.!?]+[.!?]?', combined)]
+        if not sentences:
+            sentences = [combined]
+
+        recent = sentences[-max_sentences:]
+        return " ".join(recent).strip()
+
+    async def update_notes(self, transcript: str):
+        """Send the full transcript to LLM and update notes"""
+        if not transcript.strip():
+            logger.info("Skipping note update because transcript is empty")
+            return
+        try:
+            # Send to LLM for processing
+            prompt = f"""
+                You are a medical note-taking assistant for a voice-based encounter between a healthcare provider and a patient. 
+                You will get a transcript of what is being said, and your job is to take structured medical notes.
+                
+                Current Notes:
+                {self.current_notes if self.current_notes else "(No notes yet)"}
+
+                Transcript So Far:
+                {transcript}
+
+                Instructions:
+                You should try to track:
+                - Chief complaints
+                - History of present illness
+                - Past medical history
+                - Current medications
+                - Allergies
+                - Vital signs (if mentioned)
+                - Physical examination findings
+                - Assessment and plan
+
+                Only add headers for this information if it is explicitly discussed in the transcription.
+                If it is not discussed, do not add any headers for that topic.
+
+                - Integrate the new information into the existing notes if there is any information that should be included.
+                - Your job is to capture the spirit of the conversation and the key points that are being discussed, but you don't need to
+                include every single thing that is said
+                - Never add any information that is not in the transcription.
+                - Never add notes about things that should be "confirmed" or "asked" to the patient that haven't been discussed.
+                - Your job is exclusively to capture what has been discussed, not keep track of what SHOULD be discussed.
+                - Only ever add information that is explicitly discussed in the transcription.
+                - Keep the notes organized and structured in a medical format
+                - Return the complete set of notes. If no update is required, repeat the existing notes verbatim.
+
+                Updated Notes:
+            """
+
+            ctx = ChatContext([
+                ChatMessage(
+                    type="message",
+                    role="system",
+                    content=["""
+                             You are an intelligent note-taking medical assistant that creates well-organized, comprehensive notes from patient & provider transcriptions.
+                             - Never add any information that is not in the transcription.
+                             - Never add notes about things that should be "confirmed" or "asked" to the patient that haven't been discussed.
+                             - Your job is exclusively to capture what has been discussed, not keep track of what SHOULD be discussed.
+                             - Format notes in a clear, structured medical format suitable for clinical documentation.
+                             """]
+                ),
+                ChatMessage(
+                    type="message",
+                    role="user",
+                    content=[prompt]
+                )
+            ])
+
+            response = ""
+            async with self.llm.chat(chat_ctx=ctx) as stream:
+                async for chunk in stream:
+                    if not chunk:
+                        continue
+                    content = getattr(chunk.delta, 'content', None) if hasattr(chunk, 'delta') else str(chunk)
+                    if content:
+                        response += content
+
+            self.current_notes = response.strip()
+
+            # Send updated notes to frontend via RPC
+            await self.send_notes_to_frontend()
+
+        except Exception as e:
+            logger.error(f"Error updating notes: {e}")
+
+    async def send_notes_to_frontend(self):
+        """Send current notes and transcriptions to frontend via RPC"""
+        try:
+            # Get remote participants
+            remote_participants = list(self.ctx.room.remote_participants.values())
+            if not remote_participants:
+                logger.info("No remote participants found to send notes")
+                return
+
+            # Send to the first remote participant (the frontend)
+            client_participant = remote_participants[0]
+
+            # Send notes via RPC
+            await self.ctx.room.local_participant.perform_rpc(
+                destination_identity=client_participant.identity,
+                method="receive_notes",
+                payload=json.dumps({
+                    "notes": self.current_notes,
+                    "transcriptions": self.transcriptions,
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+            )
+            logger.info(f"Sent notes to frontend ({client_participant.identity})")
+        except Exception as e:
+            logger.error(f"Error sending notes via RPC: {e}")
+
+    async def send_transcription_to_frontend(self, transcription: str):
+        """Send the current transcript to frontend via RPC"""
+        if not transcription:
+            return
+        if transcription == self._last_transcription_sent:
+            return
+        previous_sent = self._last_transcription_sent
+        self._last_transcription_sent = transcription
+        try:
+            # Get remote participants
+            remote_participants = list(self.ctx.room.remote_participants.values())
+            if not remote_participants:
+                logger.info("No remote participants found to send transcription")
+                self._last_transcription_sent = previous_sent
+                return
+
+            # Send to the first remote participant (the frontend)
+            client_participant = remote_participants[0]
+
+            # Send transcription via RPC
+            await self.ctx.room.local_participant.perform_rpc(
+                destination_identity=client_participant.identity,
+                method="receive_transcription",
+                payload=json.dumps({
+                    "transcription": transcription,
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+            )
+            logger.info(f"Sent transcription to frontend: {transcription[:50]}...")
+        except Exception as e:
+            self._last_transcription_sent = previous_sent
+            logger.error(f"Error sending transcription via RPC: {e}")
 
 
 async def entrypoint(ctx: JobContext):
-    """Entry point for the transcription agent"""
-    logger.info(f"🚀 Healthcare transcription agent starting for room: {ctx.room.name}")
-    
-    # Wait for participants to join
-    await ctx.wait_for_participants()
-    
-    logger.info("👥 Participants joined, starting transcription...")
-    
-    # Send test message to verify connection
-    try:
-        await ctx.room.local_participant.publish_data(
-            data=json.dumps({
-                "type": "transcription",
-                "text": "Agent connected and ready for transcription",
-                "final": True,
-                "speaker": "system",
-            }).encode(),
-            kind=rtc.DataPacket_Kind.RELIABLE,
-        )
-        logger.info("✅ Test message sent")
-    except Exception as e:
-        logger.error(f"Error sending test message: {e}")
-    
-    # Initialize STT using Deepgram
-    stt = deepgram.STT(model="nova-2", language="en-US")
-    
-    # Auto-subscribe to all audio tracks
-    await AutoSubscribe(ctx.room).start()
-    
-    # Store active transcription tasks
-    transcription_tasks = []
-    
-    async def process_audio_track(track: rtc.Track, participant: rtc.RemoteParticipant):
-        """Process audio track and transcribe"""
-        if track.kind != rtc.TrackKind.KIND_AUDIO:
+    """Entry point for the Echo Health transcription and note generation agent"""
+    setup_langfuse()  # set up the langfuse tracer if configured
+
+    session = AgentSession()
+
+    # Create the agent with Deepgram STT
+    agent = Agent(
+        instructions="""
+            You are a medical transcription and note-taking assistant for Echo Health.
+            Your role is to transcribe conversations and generate structured medical notes in real-time.
+        """,
+        stt=deepgram.STTv2(eager_eot_threshold=0.5),
+        vad=silero.VAD.load()
+    )
+
+    # Create Echo Health assistant
+    health_assistant = EchoHealthAssistant(ctx)
+
+    @session.on("user_input_transcribed")
+    def on_transcript(transcript):
+        logger.info(f"Transcript received: {transcript}")
+        fragment = transcript.transcript.strip()
+        if not fragment:
             return
-            
-        logger.info(f"🎤 Processing audio track from {participant.identity}")
-        
-        # Create audio stream
-        stream = rtc.AudioStream(track)
-        
-        # Buffer for accumulating audio
-        audio_buffer = []
-        buffer_size = 20  # Process every 20 frames (~1 second)
-        
-        async def transcribe_loop():
-            try:
-                frame_count = 0
-                async for frame in stream:
-                    audio_buffer.append(frame)
-                    frame_count += 1
-                    
-                    # Process buffer periodically
-                    if frame_count >= buffer_size:
-                        if audio_buffer:
-                            try:
-                                # Transcribe accumulated audio
-                                # Note: Deepgram STT expects audio frames
-                                for audio_frame in audio_buffer:
-                                    result = await stt.transcribe(audio_frame)
-                                    
-                                    if result and hasattr(result, 'text') and result.text:
-                                        text = result.text.strip()
-                                        if text and len(text) > 2:
-                                            logger.info(f"📝 Transcription from {participant.identity}: '{text}'")
-                                            
-                                            # Send to room as data message
-                                            try:
-                                                await ctx.room.local_participant.publish_data(
-                                                    data=json.dumps({
-                                                        "type": "transcription",
-                                                        "text": text,
-                                                        "final": True,
-                                                        "speaker": participant.identity,
-                                                    }).encode(),
-                                                    kind=rtc.DataPacket_Kind.RELIABLE,
-                                                )
-                                                logger.info(f"✅ Sent transcription: {text}")
-                                            except Exception as e:
-                                                logger.error(f"Error sending data: {e}")
-                                
-                                # Clear buffer
-                                audio_buffer.clear()
-                                frame_count = 0
-                                
-                            except Exception as e:
-                                logger.error(f"Error transcribing: {e}")
-                                
-            except Exception as e:
-                logger.error(f"Error in transcription loop: {e}")
-        
-        # Start transcription task
-        task = asyncio.create_task(transcribe_loop())
-        transcription_tasks.append(task)
-        logger.info(f"✅ Started transcription task for {participant.identity}")
-    
-    # Process existing participants and their tracks
-    for participant in ctx.room.remote_participants.values():
-        logger.info(f"👤 Processing existing participant: {participant.identity}")
-        for track_publication in participant.track_publications.values():
-            if track_publication.track:
-                await process_audio_track(track_publication.track, participant)
-    
-    # Handle new participants
-    async def on_participant_connected(participant: rtc.RemoteParticipant):
-        logger.info(f"👤 New participant connected: {participant.identity}")
-        # Process their tracks when they publish
-        for track_publication in participant.track_publications.values():
-            if track_publication.track:
-                await process_audio_track(track_publication.track, participant)
-    
-    ctx.room.on("participant_connected", on_participant_connected)
-    
-    # Handle track subscribed
-    async def on_track_subscribed(
-        track: rtc.Track,
-        publication: rtc.TrackPublication,
-        participant: rtc.RemoteParticipant,
-    ):
-        logger.info(f"🎤 Track subscribed: {track.kind} from {participant.identity}")
-        if track.kind == rtc.TrackKind.KIND_AUDIO:
-            await process_audio_track(track, participant)
-    
-    ctx.room.on("track_subscribed", on_track_subscribed)
-    
-    # Keep running
-    try:
-        logger.info("🔄 Agent running, waiting for audio...")
-        # Wait for room to disconnect
-        await ctx.room.wait_for_disconnect()
-    except Exception as e:
-        logger.error(f"Error in agent: {e}")
-    finally:
-        logger.info("🛑 Agent shutting down, cancelling tasks...")
-        # Cancel all transcription tasks
-        for task in transcription_tasks:
-            task.cancel()
-        await stt.aclose()
-        logger.info("✅ Agent shutdown complete")
+
+        if transcript.is_final:
+            health_assistant.transcriptions.append(fragment)
+            if health_assistant.full_transcript:
+                health_assistant.full_transcript = f"{health_assistant.full_transcript} {fragment}"
+            else:
+                health_assistant.full_transcript = fragment
+
+            display_text = health_assistant.build_display_transcript()
+            asyncio.create_task(
+                health_assistant.send_transcription_to_frontend(display_text)
+            )
+
+            logger.info(f"Transcript updated: {fragment}")
+
+            # Cancel previous note update task if still running
+            if health_assistant.note_update_task and not health_assistant.note_update_task.done():
+                health_assistant.note_update_task.cancel()
+
+            # Start new note update task
+            health_assistant.note_update_task = asyncio.create_task(
+                health_assistant.update_notes(health_assistant.full_transcript)
+            )
+        else:
+            # Interim transcription - send to frontend for live display
+            display_text = health_assistant.build_display_transcript(partial=fragment)
+            asyncio.create_task(
+                health_assistant.send_transcription_to_frontend(display_text)
+            )
+
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        usage_collector.collect(ev.metrics)
+
+    async def log_usage():
+        summary = usage_collector.get_summary()
+        logger.info(f"Usage: {summary}")
+
+    logger.info("Echo Health assistant started. Listening for transcriptions...")
+
+    await session.start(
+        agent=agent,
+        room=ctx.room
+    )
+
+    ctx.add_shutdown_callback(log_usage)
 
 
 if __name__ == "__main__":
