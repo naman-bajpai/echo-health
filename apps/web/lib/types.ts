@@ -188,3 +188,47 @@ export interface UrgencyResponse {
   assessment: UrgencyAssessment;
   encounterId: string;
 }
+
+export interface Diagnosis {
+  diagnosis: string;
+  confidence: "high" | "medium" | "low";
+  reasoning: string;
+  icd10_code?: string;
+}
+
+export interface DifferentialDiagnosis {
+  diagnosis: string;
+  reasoning: string;
+}
+
+export interface RecommendedTest {
+  test: string;
+  reason: string;
+}
+
+export interface TreatmentConsideration {
+  treatment: string;
+  rationale: string;
+}
+
+export interface FollowUpRecommendation {
+  timeframe: string;
+  reason: string;
+  urgency: "routine" | "soon" | "urgent";
+}
+
+export interface DiagnosisResult {
+  primary_diagnoses: Diagnosis[];
+  differential_diagnoses: DifferentialDiagnosis[];
+  recommended_tests: RecommendedTest[];
+  treatment_considerations: TreatmentConsideration[];
+  follow_up_recommendations: FollowUpRecommendation;
+  red_flags: string[];
+  disclaimer: string;
+  generated_at: string;
+}
+
+export interface DiagnosisResponse {
+  diagnosis: DiagnosisResult;
+  encounterId: string;
+}

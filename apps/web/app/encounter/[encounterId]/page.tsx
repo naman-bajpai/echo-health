@@ -10,6 +10,7 @@ import FieldsPanel from "@/components/FieldsPanel";
 import DraftNotePanel from "@/components/DraftNotePanel";
 import ReferralPanel from "@/components/ReferralPanel";
 import SummaryPanel from "@/components/SummaryPanel";
+import { RealtimeNotesPanel } from "@/components/RealtimeNotesPanel";
 import {
   getEncounter,
   getTranscript,
@@ -26,7 +27,9 @@ import {
   updateFields,
   assessUrgency,
   analyzeEncounter,
+  generateDiagnosis,
 } from "@/lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import type {
   Encounter,
   TranscriptChunk,
@@ -36,6 +39,7 @@ import type {
   PatientSummary,
   PanelMode,
   UrgencyAssessment,
+  DiagnosisResult,
 } from "@/lib/types";
 import { 
   Loader2, 
@@ -67,6 +71,7 @@ export default function EncounterPage() {
     }>
   >([]);
   const [summary, setSummary] = useState<PatientSummary | null>(null);
+  const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
   const [urgencyAssessment, setUrgencyAssessment] =
     useState<UrgencyAssessment | null>(null);
 
@@ -74,6 +79,7 @@ export default function EncounterPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAssessing, setIsAssessing] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isGeneratingDiagnosis, setIsGeneratingDiagnosis] = useState(false);
   const [analysisComplete, setAnalysisComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -108,6 +114,20 @@ export default function EncounterPage() {
 
         setEncounter(encounterData);
         setTranscript(transcriptData);
+
+        // Load diagnosis if available
+        const { data: diagnosisArtifact } = await supabase
+          .from("artifacts")
+          .select("content")
+          .eq("encounter_id", encounterId)
+          .eq("type", "diagnosis")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (diagnosisArtifact?.content) {
+          setDiagnosis(diagnosisArtifact.content as DiagnosisResult);
+        }
       } catch (err) {
         console.error("Error loading encounter:", err);
         setError("Failed to load encounter");
@@ -283,6 +303,18 @@ export default function EncounterPage() {
     }
   }, [encounterId]);
 
+  const handleGenerateDiagnosis = useCallback(async () => {
+    setIsGeneratingDiagnosis(true);
+    try {
+      const result = await generateDiagnosis(encounterId);
+      setDiagnosis(result.diagnosis);
+    } catch (err) {
+      console.error("Failed to generate diagnosis:", err);
+    } finally {
+      setIsGeneratingDiagnosis(false);
+    }
+  }, [encounterId]);
+
   const handleDownloadPdf = useCallback(async () => {
     try {
       const result = await getSummaryPdfUrl(encounterId);
@@ -369,12 +401,21 @@ export default function EncounterPage() {
     switch (currentMode) {
       case "transcript":
         return (
-          <TranscriptPanel
-            transcript={transcript}
-            onAddTranscript={handleAddTranscript}
-            livekitToken={livekitToken}
-            roomName={roomName}
-          />
+          <div className="flex h-full gap-4">
+            {/* Transcript Panel - Left Side */}
+            <div className="flex-1 min-w-0">
+              <TranscriptPanel
+                transcript={transcript}
+                onAddTranscript={handleAddTranscript}
+                livekitToken={livekitToken}
+                roomName={roomName}
+              />
+            </div>
+            {/* Real-time Notes Panel - Right Side */}
+            <div className="w-96 flex-shrink-0 border-l border-ink-200">
+              <RealtimeNotesPanel className="h-full" />
+            </div>
+          </div>
         );
       case "fields":
         return (
@@ -406,9 +447,12 @@ export default function EncounterPage() {
         return (
           <SummaryPanel
             summary={summary}
+            diagnosis={diagnosis}
             onGenerate={handleGenerateSummary}
+            onGenerateDiagnosis={handleGenerateDiagnosis}
             onDownloadPdf={handleDownloadPdf}
             onNarrate={handleNarrate}
+            isGeneratingDiagnosis={isGeneratingDiagnosis}
           />
         );
     }

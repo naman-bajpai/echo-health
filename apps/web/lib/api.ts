@@ -11,6 +11,7 @@ import type {
   PdfResponse,
   NarrateResponse,
   UrgencyResponse,
+  DiagnosisResponse,
   Provider,
   Encounter,
   TranscriptChunk,
@@ -226,6 +227,18 @@ export async function analyzeEncounter(
   encounterId: string
 ): Promise<{ success: boolean; analysis: any; encounterId: string }> {
   return callFunction("analyze-encounter", {
+    encounterId,
+  });
+}
+
+/**
+ * Generate diagnosis recommendations using ChatGPT API
+ * Analyzes entire transcript (patient + provider) to suggest diagnoses
+ */
+export async function generateDiagnosis(
+  encounterId: string
+): Promise<DiagnosisResponse> {
+  return callFunction<DiagnosisResponse>("generate-diagnosis", {
     encounterId,
   });
 }

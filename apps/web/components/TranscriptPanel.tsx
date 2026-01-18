@@ -143,7 +143,55 @@ export default function TranscriptPanel({
         console.log("Connection state:", state);
       });
 
-      // Handle transcription from LiveKit STT Agent
+      // Register RPC handlers for receiving notes and transcriptions from agent
+      const handleReceiveNotes = async (rpcInvocation: any): Promise<string> => {
+        try {
+          const payload = JSON.parse(rpcInvocation.payload);
+          console.log("📋 Notes received via RPC:", payload);
+          
+          if (payload && payload.notes) {
+            // Store notes in a way that can be accessed by parent component
+            // We'll emit a custom event or use a callback
+            window.dispatchEvent(new CustomEvent('echo-health-notes-updated', {
+              detail: { notes: payload.notes }
+            }));
+          }
+          return 'Success: Notes received';
+        } catch (error) {
+          console.error("Error handling notes RPC:", error);
+          return 'Error: ' + (error instanceof Error ? error.message : String(error));
+        }
+      };
+
+      const handleReceiveTranscription = async (rpcInvocation: any): Promise<string> => {
+        try {
+          const payload = JSON.parse(rpcInvocation.payload);
+          console.log("📝 Transcription received via RPC:", payload);
+          
+          if (payload && payload.transcription) {
+            // Update live text display
+            setLiveText(payload.transcription);
+            
+            // Emit custom event for RealtimeNotesPanel
+            window.dispatchEvent(new CustomEvent('echo-health-transcription-updated', {
+              detail: { transcription: payload.transcription }
+            }));
+            
+            // If this is a final transcription, we might want to save it
+            // For now, we'll just display it
+          }
+          return 'Success: Transcription received';
+        } catch (error) {
+          console.error("Error handling transcription RPC:", error);
+          return 'Error: ' + (error instanceof Error ? error.message : String(error));
+        }
+      };
+
+      // Register RPC methods
+      room.localParticipant.registerRpcMethod('receive_notes', handleReceiveNotes);
+      room.localParticipant.registerRpcMethod('receive_transcription', handleReceiveTranscription);
+
+      // Handle transcription from LiveKit STT Agent (fallback)
       room.on(RoomEvent.TranscriptionReceived, (segments: any, participant: any) => {
         console.log("📝 Transcription received:", segments);
         
@@ -230,6 +278,13 @@ export default function TranscriptPanel({
 
     if (roomRef.current) {
       console.log("🔌 Disconnecting from LiveKit...");
+      // Unregister RPC methods before disconnecting
+      try {
+        roomRef.current.localParticipant.unregisterRpcMethod('receive_notes');
+        roomRef.current.localParticipant.unregisterRpcMethod('receive_transcription');
+      } catch (e) {
+        console.warn("Error unregistering RPC methods:", e);
+      }
       roomRef.current.disconnect();
       roomRef.current = null;
     }

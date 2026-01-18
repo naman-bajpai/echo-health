@@ -98,16 +98,33 @@ Respond with JSON only:
         draftNote = { ...draftNote, ...result };
       }
     } else {
-      // Fallback
+      // Fallback - use full transcript (both patient and provider)
+      const fullTranscript = chunks
+        ?.map((c) => `${c.speaker === "patient" ? "Patient" : "Provider"}: ${c.text}`)
+        .join("\n") || "No conversation recorded.";
+
+      // Extract patient statements for subjective
       const patientText = chunks
         ?.filter((c) => c.speaker === "patient")
         .map((c) => c.text)
         .join(". ") || "No patient statements recorded.";
 
-      draftNote.subjective = `Patient reports: ${patientText}`;
-      draftNote.objective = "Vital signs and physical examination findings pending documentation.";
-      draftNote.assessment = "[DRAFT - Requires physician review] Assessment pending clinical evaluation.";
-      draftNote.plan = "[DRAFT - Requires physician approval] Treatment plan to be determined.";
+      // Extract provider statements for objective
+      const providerText = chunks
+        ?.filter((c) => c.speaker === "staff" || c.speaker === "clinician")
+        .map((c) => c.text)
+        .join(". ") || "";
+
+      draftNote.subjective = patientText 
+        ? `Patient reports: ${patientText}`
+        : "No patient statements recorded.";
+      
+      draftNote.objective = providerText
+        ? `Provider observations: ${providerText}`
+        : "Vital signs and physical examination findings pending documentation.";
+      
+      draftNote.assessment = "[DRAFT - Requires physician review] Assessment pending clinical evaluation based on full conversation.";
+      draftNote.plan = "[DRAFT - Requires physician approval] Treatment plan to be determined based on complete encounter.";
     }
 
     // Save as artifact

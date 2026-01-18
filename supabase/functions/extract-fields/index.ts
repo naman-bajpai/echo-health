@@ -117,9 +117,11 @@ Respond with JSON only:
       console.log("Claude not configured, using fallback extraction");
     }
 
-    // Fallback: basic pattern extraction
+    // Fallback: basic pattern extraction - use full transcript (both patient and provider)
     if (!aiUsed) {
+      // Use full transcript for extraction (both patient and provider statements)
       const fullText = chunks.map((c) => c.text).join(" ").toLowerCase();
+      // Also keep patient text for symptom-specific extraction
       const patientText = chunks
         .filter((c) => c.speaker === "patient")
         .map((c) => c.text)

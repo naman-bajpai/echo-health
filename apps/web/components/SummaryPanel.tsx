@@ -13,24 +13,30 @@ import {
   Sparkles,
   FileCheck,
 } from "lucide-react";
-import type { PatientSummary } from "@/lib/types";
+import type { PatientSummary, DiagnosisResult } from "@/lib/types";
 import { PATIENT_DISCLAIMER } from "@/lib/safety";
 
 interface SummaryPanelProps {
   summary: PatientSummary | null;
+  diagnosis?: DiagnosisResult | null;
   onGenerate: () => Promise<void>;
+  onGenerateDiagnosis?: () => Promise<void>;
   onDownloadPdf: () => Promise<void>;
   onNarrate: (text: string) => Promise<void>;
   isLoading?: boolean;
+  isGeneratingDiagnosis?: boolean;
   disabled?: boolean;
 }
 
 export default function SummaryPanel({
   summary,
+  diagnosis,
   onGenerate,
+  onGenerateDiagnosis,
   onDownloadPdf,
   onNarrate,
   isLoading,
+  isGeneratingDiagnosis,
   disabled,
 }: SummaryPanelProps) {
   const [isGenerating, setIsGenerating] = useState(false);
@@ -157,25 +163,105 @@ export default function SummaryPanel({
             {/* Diagnoses */}
             {(summary.diagnoses || []).length > 0 && (
               <div className="card p-6 bg-gradient-to-br from-sage-50/50 to-white">
-                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-sage-100 rounded-xl flex items-center justify-center">
-                    <CheckCircle className="w-5 h-5 text-sage-600" />
-                  </div>
-                  Diagnoses
-                </h3>
-                <ul className="space-y-3">
-                  {(summary.diagnoses || []).map((diagnosis, index) => (
-                    <li
-                      key={index}
-                      className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
+                <div className="flex items-center justify-between mb-5">
+                  <h3 className="font-bold text-ink-800 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-sage-100 rounded-xl flex items-center justify-center">
+                      <CheckCircle className="w-5 h-5 text-sage-600" />
+                    </div>
+                    Diagnoses
+                  </h3>
+                  {onGenerateDiagnosis && (
+                    <button
+                      onClick={onGenerateDiagnosis}
+                      disabled={disabled || isGeneratingDiagnosis}
+                      className="btn-primary text-xs px-3 py-1.5 flex items-center gap-2"
                     >
-                      <span className="flex-shrink-0 w-7 h-7 bg-sage-100 text-sage-700 rounded-lg flex items-center justify-center text-sm font-bold">
-                        {index + 1}
-                      </span>
-                      <span className="text-ink-700 pt-0.5">{diagnosis}</span>
-                    </li>
-                  ))}
-                </ul>
+                      {isGeneratingDiagnosis ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Generate Diagnosis
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+                
+                {/* Show detailed diagnosis if available */}
+                {diagnosis && diagnosis.primary_diagnoses.length > 0 ? (
+                  <div className="space-y-4">
+                    {diagnosis.primary_diagnoses.map((diag, index) => (
+                      <div
+                        key={index}
+                        className="bg-white p-4 rounded-xl border border-surface-200"
+                      >
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <span className="flex-shrink-0 w-7 h-7 bg-sage-100 text-sage-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                            {index + 1}
+                          </span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-semibold text-ink-800">{diag.diagnosis}</span>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                diag.confidence === "high" 
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : diag.confidence === "medium"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}>
+                                {diag.confidence} confidence
+                              </span>
+                              {diag.icd10_code && (
+                                <span className="px-2 py-0.5 rounded text-xs font-mono bg-blue-100 text-blue-700">
+                                  {diag.icd10_code}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-sm text-ink-600 mt-1">{diag.reasoning}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {diagnosis.differential_diagnoses.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-surface-200">
+                        <h4 className="font-semibold text-ink-700 mb-3 text-sm">Differential Diagnoses</h4>
+                        <ul className="space-y-2">
+                          {diagnosis.differential_diagnoses.map((diag, index) => (
+                            <li key={index} className="text-sm text-ink-600">
+                              <span className="font-medium">{diag.diagnosis}:</span> {diag.reasoning}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {(summary.diagnoses || []).map((diag, index) => (
+                      <li
+                        key={index}
+                        className="flex items-start gap-3 bg-white p-4 rounded-xl border border-surface-200"
+                      >
+                        <span className="flex-shrink-0 w-7 h-7 bg-sage-100 text-sage-700 rounded-lg flex items-center justify-center text-sm font-bold">
+                          {index + 1}
+                        </span>
+                        <span className="text-ink-700 pt-0.5">{diag}</span>
+                      </li>
+                    ))}
+                    {(!summary.diagnoses || summary.diagnoses.length === 0) && (
+                      <li className="text-ink-500 text-sm italic p-4 bg-surface-50 rounded-xl">
+                        {onGenerateDiagnosis 
+                          ? "Click 'Generate Diagnosis' to analyze the full conversation transcript and get AI-recommended diagnoses."
+                          : "No diagnoses available."}
+                      </li>
+                    )}
+                  </ul>
+                )}
               </div>
             )}
 

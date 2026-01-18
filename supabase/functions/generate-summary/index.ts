@@ -142,18 +142,25 @@ Respond with JSON only:
       console.log(`Using fallback (Claude configured: ${claudeConfigured}, transcript length: ${transcriptText.length})`);
     }
 
-    // Fallback if AI didn't work
+    // Fallback if AI didn't work - use full transcript (both patient and provider)
     if (!aiUsed) {
+      // Use full conversation for summary
+      const fullConversation = chunks
+        ?.map(c => `${c.speaker === "patient" ? "You" : "Your provider"}: ${c.text}`)
+        .join(". ") || "";
+
       const patientStatements = chunks
         ?.filter(c => c.speaker === "patient")
         .map(c => c.text)
         .join(". ") || "";
 
-      summary.visit_summary = patientStatements 
+      summary.visit_summary = fullConversation
+        ? `You visited today for ${encounter?.reason_for_visit || "your health concern"}. During the visit: ${fullConversation.substring(0, 200)}...`
+        : patientStatements
         ? `You visited today for ${encounter?.reason_for_visit || "your health concern"}. You mentioned: ${patientStatements.substring(0, 150)}...`
         : `You visited today for ${encounter?.reason_for_visit || "your health concern"}. Your healthcare team documented your visit.`;
       
-      summary.diagnoses = ["[Pending doctor review] Your condition is being evaluated"];
+      summary.diagnoses = ["[Pending doctor review] Your condition is being evaluated based on the complete conversation"];
       summary.treatment_plan = ["Follow up with your healthcare provider as directed"];
       summary.medications = (fields as any).medications || [];
       summary.follow_up = "Please follow up as directed by your healthcare provider.";
