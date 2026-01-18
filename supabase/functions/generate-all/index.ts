@@ -5,6 +5,10 @@ import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
 import { callOpenAIJSON, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
 
+// Import billing codes generation logic
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
 interface GenerateAllRequest {
   encounterId: string;
 }
@@ -233,8 +237,31 @@ Respond with JSON only:
       };
     }
 
-    // Save both as artifacts
-    await Promise.all([
+    // Generate billing codes (ICD-10 and CPT)
+    let billingCodes: any = null;
+    if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+      try {
+        const billingResponse = await fetch(`${SUPABASE_URL}/functions/v1/generate-billing-codes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+          },
+          body: JSON.stringify({ encounterId }),
+        });
+        
+        if (billingResponse.ok) {
+          const billingData = await billingResponse.json();
+          billingCodes = billingData.billingCodes;
+        }
+      } catch (e) {
+        console.error("Error generating billing codes:", e);
+        // Don't fail if billing codes generation fails
+      }
+    }
+
+    // Save all artifacts
+    const artifactsToSave = [
       supabaseAdmin.from("artifacts").upsert({
         encounter_id: encounterId,
         type: "draft_note",
@@ -245,7 +272,19 @@ Respond with JSON only:
         type: "summary",
         content: summary,
       }, { onConflict: "encounter_id,type" }),
-    ]);
+    ];
+
+    if (billingCodes) {
+      artifactsToSave.push(
+        supabaseAdmin.from("artifacts").upsert({
+          encounter_id: encounterId,
+          type: "billing_codes",
+          content: billingCodes,
+        }, { onConflict: "encounter_id,type" })
+      );
+    }
+
+    await Promise.all(artifactsToSave);
 
     // Update encounter status
     await supabaseAdmin
@@ -256,6 +295,7 @@ Respond with JSON only:
     return jsonResponse({
       draftNote,
       summary,
+      billingCodes,
       encounterId,
     });
   } catch (error) {

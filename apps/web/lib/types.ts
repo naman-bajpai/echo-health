@@ -8,7 +8,7 @@ export type SpeakerRole = "patient" | "clinician" | "staff";
 export type UserRole = "nurse" | "doctor";
 export type UrgencyLevel = "routine" | "urgent" | "emergent";
 export type EncounterStatus = "active" | "completed" | "reviewed";
-export type PanelMode = "transcript" | "fields" | "note" | "referral" | "summary";
+export type PanelMode = "transcript" | "fields" | "note" | "referral" | "summary" | "clinical-focus";
 
 export interface User {
   id: string;
@@ -239,5 +239,24 @@ export interface DiagnosisResult {
 
 export interface DiagnosisResponse {
   diagnosis: DiagnosisResult;
+  encounterId: string;
+}
+
+export interface BillingCode {
+  code: string;
+  description: string;
+  confidence: "high" | "medium" | "low";
+  rationale: string;
+}
+
+export interface BillingCodesResult {
+  icd10_codes: BillingCode[];
+  cpt_codes: BillingCode[];
+  generated_at: string;
+  disclaimer: string;
+}
+
+export interface BillingCodesResponse {
+  billingCodes: BillingCodesResult;
   encounterId: string;
 }

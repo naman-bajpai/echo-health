@@ -24,6 +24,8 @@ import {
   Activity,
   Sparkles,
   ArrowUpRight,
+  FileText,
+  Brain,
 } from "lucide-react";
 import type { Encounter, Patient } from "@/lib/types";
 
@@ -109,7 +111,8 @@ export default function DashboardPage() {
             <div className="hidden md:flex items-center gap-6">
               <Link href="/dashboard" className="text-sm font-bold text-ink-900 border-b-2 border-primary-500 pb-1">Dashboard</Link>
               <Link href="/patients" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Patient Registry</Link>
-              <Link href="/analytics" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Clinical Insights</Link>
+              <Link href="/templates" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Templates</Link>
+              <Link href="/doctor" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Doctor Portal</Link>
             </div>
           </div>
 
@@ -146,14 +149,30 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <Link
-            href="/new-encounter"
-            className="flex items-center gap-3 px-8 py-4 bg-ink-900 text-white rounded-[2rem] font-bold shadow-soft-xl hover:bg-black hover:-translate-y-1 transition-all group"
-          >
-            <Plus className="w-5 h-5" />
-            <span>Initiate New Encounter</span>
-            <ArrowUpRight className="w-4 h-4 ml-2 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/templates"
+              className="flex items-center gap-2 px-5 py-3 bg-white text-ink-700 rounded-2xl font-bold border border-surface-200 hover:border-primary-200 hover:text-primary-600 transition-all"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Templates</span>
+            </Link>
+            <Link
+              href="/doctor"
+              className="flex items-center gap-2 px-5 py-3 bg-purple-50 text-purple-700 rounded-2xl font-bold border border-purple-200 hover:bg-purple-100 transition-all"
+            >
+              <Brain className="w-4 h-4" />
+              <span>Doctor Portal</span>
+            </Link>
+            <Link
+              href="/new-encounter"
+              className="flex items-center gap-3 px-8 py-4 bg-ink-900 text-white rounded-[2rem] font-bold shadow-soft-xl hover:bg-black hover:-translate-y-1 transition-all group"
+            >
+              <Plus className="w-5 h-5" />
+              <span>New Encounter</span>
+              <ArrowUpRight className="w-4 h-4 ml-2 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </Link>
+          </div>
         </div>
 
         {/* Intelligence Stats */}

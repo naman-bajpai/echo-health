@@ -1,5 +1,5 @@
 // Generate PDF Edge Function
-// Creates downloadable PDF from visit summary with all details
+// Creates comprehensive downloadable PDF with all encounter details for doctor review
 
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
@@ -20,7 +20,7 @@ serve(async (req: Request) => {
       return errorResponse("encounterId is required");
     }
 
-    // Fetch encounter
+    // Fetch encounter with full details
     const { data: encounter, error: encounterError } = await supabaseAdmin
       .from("encounters")
       .select("*")
@@ -31,49 +31,160 @@ serve(async (req: Request) => {
       return errorResponse("Encounter not found", 404);
     }
 
-    // Fetch summary artifact
-    let summaryQuery = supabaseAdmin
-      .from("artifacts")
-      .select("*")
+    // Fetch ALL artifacts in parallel for comprehensive PDF
+    const [
+      summaryResult,
+      fieldsResult,
+      billingCodesResult,
+      draftNoteResult,
+      diagnosisResult,
+      clinicalFocusResult,
+      referralsResult,
+    ] = await Promise.all([
+      // Summary artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("*")
+        .eq("encounter_id", encounterId)
+        .eq("type", "summary")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Fields artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "fields")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Billing codes artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "billing_codes")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Draft note artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "draft_note")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Diagnosis artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "diagnosis")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Clinical focus artifact
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "clinical_focus")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // Referral artifacts
+      supabaseAdmin
+        .from("artifacts")
+        .select("content")
+        .eq("encounter_id", encounterId)
+        .eq("type", "referral")
+        .order("created_at", { ascending: false }),
+    ]);
+
+    // Fetch full transcript
+    const { data: transcriptChunks } = await supabaseAdmin
+      .from("transcript_chunks")
+      .select("speaker, text, created_at")
       .eq("encounter_id", encounterId)
-      .eq("type", "summary");
+      .order("created_at", { ascending: true });
 
-    if (summaryId) {
-      summaryQuery = summaryQuery.eq("id", summaryId);
-    } else {
-      summaryQuery = summaryQuery.order("created_at", { ascending: false }).limit(1);
-    }
+    // Build transcript array
+    const transcript = transcriptChunks?.map(chunk => ({
+      speaker: chunk.speaker,
+      text: chunk.text,
+      timestamp: chunk.created_at,
+    })) || [];
 
-    const { data: summaryArtifact, error: summaryError } = await summaryQuery.single();
+    const summaryArtifact = summaryResult.data;
+    
+    // Allow PDF generation even without summary - use placeholders
+    const summary = summaryArtifact?.content as PatientSummary || {
+      visit_summary: "Summary pending generation.",
+      diagnoses: [],
+      treatment_plan: [],
+      medications: [],
+      follow_up: "",
+      patient_instructions: [],
+      warning_signs: [],
+      generated_at: new Date().toISOString(),
+      disclaimer: "This document is for informational purposes only.",
+    };
+    
+    const fields = fieldsResult.data?.content as ExtractedFields | null;
+    const billingCodes = billingCodesResult.data?.content as any | null;
+    const draftNote = draftNoteResult.data?.content as any | null;
+    const diagnosis = diagnosisResult.data?.content as any | null;
+    const clinicalFocus = clinicalFocusResult.data?.content as any | null;
+    const referrals = referralsResult.data?.map(r => r.content) || [];
 
-    if (summaryError || !summaryArtifact) {
-      return errorResponse("Summary not found. Generate summary first.", 404);
-    }
+    // Log what data we have (for debugging)
+    console.log("PDF Generation - Data available:", {
+      hasSummary: !!summary,
+      hasFields: !!fields,
+      hasDraftNote: !!draftNote,
+      hasBillingCodes: !!billingCodes,
+      hasDiagnosis: !!diagnosis,
+      hasClinicalFocus: !!clinicalFocus,
+      hasReferrals: !!referrals,
+      transcriptLength: transcript?.length || 0,
+      encounterId: encounter.id,
+    });
 
-    // Fetch fields artifact
-    const { data: fieldsArtifact } = await supabaseAdmin
-      .from("artifacts")
-      .select("content")
-      .eq("encounter_id", encounterId)
-      .eq("type", "fields")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    const summary = summaryArtifact.content as PatientSummary;
-    const fields = fieldsArtifact?.content as ExtractedFields | null;
-
-    // Generate PDF with all available data
+    // Generate comprehensive PDF with all available data
     const pdfBytes = generateSummaryPdf({
       summary,
       fields,
+      draftNote,
+      billingCodes,
+      diagnosis,
+      clinicalFocus,
+      referrals,
+      transcript,
+      encounter: {
+        id: encounter.id,
+        patient_name: encounter.patient_name,
+        patient_dob: encounter.patient_dob,
+        reason_for_visit: encounter.reason_for_visit,
+        urgency: encounter.urgency,
+        urgency_reason: encounter.urgency_reason,
+        specialist_needed: encounter.specialist_needed || false,
+        recommended_specialist: encounter.recommended_specialist,
+        status: encounter.status,
+        created_at: encounter.created_at,
+      },
       patientName: encounter.patient_name || undefined,
       encounterDate: new Date(encounter.created_at).toLocaleDateString(),
       encounterId: encounter.id,
     });
 
+    console.log("PDF generated, size:", pdfBytes.length, "bytes");
+
     // Upload to Supabase Storage
-    const fileName = `${encounterId}/${summaryArtifact.id}.pdf`;
+    const artifactId = summaryArtifact?.id || encounterId;
+    const fileName = `${encounterId}/${artifactId}.pdf`;
     const { error: uploadError } = await supabaseAdmin.storage
       .from("summaries")
       .upload(fileName, pdfBytes, {
@@ -98,7 +209,7 @@ serve(async (req: Request) => {
 
     return jsonResponse({
       pdfUrl: signedUrlData.signedUrl,
-      fileName: `visit-summary-${encounterId.slice(0, 8)}.pdf`,
+      fileName: `encounter-report-${encounterId.slice(0, 8)}.pdf`,
       expiresIn: 3600,
     });
   } catch (error) {

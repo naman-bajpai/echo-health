@@ -52,13 +52,73 @@ export async function startEncounter(
   patientName?: string,
   reasonForVisit?: string,
   patientId?: string,
-  createdBy?: string
+  createdBy?: string,
+  templateId?: string
 ): Promise<StartEncounterResponse> {
   return callFunction<StartEncounterResponse>("start-encounter", {
     patient_name: patientName,
     reason_for_visit: reasonForVisit,
     patient_id: patientId,
     created_by: createdBy,
+    template_id: templateId,
+  });
+}
+
+/**
+ * Upload EHR template
+ */
+export async function uploadEhrTemplate(
+  templateName: string,
+  templateContent: string,
+  fileUrl?: string,
+  fileType?: string
+): Promise<{ template: any; questions: any[]; message: string }> {
+  return callFunction("upload-ehr-template", {
+    templateName,
+    templateContent,
+    fileUrl,
+    fileType,
+  });
+}
+
+/**
+ * Generate questions from template
+ */
+export async function generateQuestions(
+  templateId: string,
+  encounterId?: string
+): Promise<{ questions: any[]; questionsId: string; templateId: string; encounterId?: string }> {
+  return callFunction("generate-questions", {
+    templateId,
+    encounterId,
+  });
+}
+
+/**
+ * Get user's templates
+ */
+export async function getUserTemplates(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from("ehr_templates")
+    .select("id, template_name, created_at")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching templates:", error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Smart clinical analysis - generates possible conditions and recommended questions
+ */
+export async function getSmartClinicalAnalysis(
+  encounterId: string
+): Promise<{ clinicalFocus: any; encounterId: string }> {
+  return callFunction("smart-clinical-analysis", {
+    encounterId,
   });
 }
 
@@ -248,8 +308,19 @@ export async function generateDiagnosis(
  */
 export async function generateAll(
   encounterId: string
-): Promise<{ draftNote: any; summary: any; encounterId: string }> {
+): Promise<{ draftNote: any; summary: any; billingCodes?: any; encounterId: string }> {
   return callFunction("generate-all", {
+    encounterId,
+  });
+}
+
+/**
+ * Generate billing codes (ICD-10 and CPT)
+ */
+export async function generateBillingCodes(
+  encounterId: string
+): Promise<{ billingCodes: any; encounterId: string }> {
+  return callFunction("generate-billing-codes", {
     encounterId,
   });
 }

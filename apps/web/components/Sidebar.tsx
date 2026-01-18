@@ -11,6 +11,7 @@ import {
   Settings,
   HelpCircle,
   LogOut,
+  Brain,
 } from "lucide-react";
 import type { PanelMode } from "@/lib/types";
 import { useState } from "react";
@@ -28,9 +29,10 @@ const modes: Array<{
   color: string;
 }> = [
   { id: "transcript", label: "Transcript", icon: MessageSquare, color: "text-primary-500" },
+  { id: "clinical-focus", label: "Clinical Focus", icon: Brain, color: "text-purple-600" },
   { id: "fields", label: "Clinical Fields", icon: ClipboardList, color: "text-accent-500" },
   { id: "note", label: "Draft Note", icon: FileText, color: "text-sage-600" },
-  { id: "referral", label: "Referrals", icon: Users, color: "text-purple-600" },
+  { id: "referral", label: "Referrals", icon: Users, color: "text-indigo-600" },
   { id: "summary", label: "Visit Summary", icon: FileCheck, color: "text-rose-500" },
 ];
 

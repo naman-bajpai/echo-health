@@ -9,6 +9,8 @@ interface StartEncounterRequest {
   reason_for_visit?: string;
   patient_id?: string;
   participant_identity?: string; // Staff member name/id
+  template_id?: string; // EHR template ID
+  created_by?: string; // User ID who created the encounter
 }
 
 // Generate unique room name
@@ -24,7 +26,7 @@ serve(async (req: Request) => {
 
   try {
     const body: StartEncounterRequest = await req.json();
-    const { patient_name, reason_for_visit, patient_id, participant_identity } = body;
+    const { patient_name, reason_for_visit, patient_id, participant_identity, template_id, created_by } = body;
 
     // Get visit number if patient_id provided
     let visitNumber = 1;
@@ -48,6 +50,14 @@ serve(async (req: Request) => {
 
     if (patient_id) {
       insertData.patient_id = patient_id;
+    }
+
+    if (template_id) {
+      insertData.template_id = template_id;
+    }
+
+    if (created_by) {
+      insertData.created_by = created_by;
     }
 
     const { data: encounter, error } = await supabaseAdmin

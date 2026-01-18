@@ -6,7 +6,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
-import { startEncounter } from "@/lib/api";
+import { startEncounter, uploadEhrTemplate, generateQuestions, getUserTemplates } from "@/lib/api";
+import TemplateUpload from "@/components/TemplateUpload";
 import logo from "@/logo.png";
 import {
   ArrowLeft,
@@ -34,7 +35,7 @@ export default function NewEncounterPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
 
-  const [step, setStep] = useState<"select" | "new-patient" | "reason">("select");
+  const [step, setStep] = useState<"select" | "new-patient" | "template" | "reason">("select");
   const [searchQuery, setSearchQuery] = useState("");
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -54,6 +55,30 @@ export default function NewEncounterPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [reasonForVisit, setReasonForVisit] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [generatedQuestions, setGeneratedQuestions] = useState<any[]>([]);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+
+  // Load templates on mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      setIsLoadingTemplates(true);
+      try {
+        const { data, error } = await supabase
+          .from("ehr_templates")
+          .select("id, template_name, created_at")
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        setTemplates(data || []);
+      } catch (error) {
+        console.error("Error loading templates:", error);
+      } finally {
+        setIsLoadingTemplates(false);
+      }
+    };
+    loadTemplates();
+  }, []);
 
   const validateNewPatient = () => {
     const errors: Record<string, string> = {};
@@ -114,6 +139,20 @@ export default function NewEncounterPage() {
     getVisitCount();
   }, [selectedPatient]);
 
+  const handleTemplateUploaded = async (templateId: string, questions: any[]) => {
+    setSelectedTemplateId(templateId);
+    setGeneratedQuestions(questions);
+    // Auto-advance to reason step
+    setStep("reason");
+  };
+
+  const handleTemplateSelected = async (templateId: string, questions: any[]) => {
+    setSelectedTemplateId(templateId || null);
+    setGeneratedQuestions(questions);
+    // Auto-advance to reason step
+    setStep("reason");
+  };
+
   const handleStartEncounter = async () => {
     if (!reasonForVisit.trim()) {
       setFieldErrors({ reasonForVisit: "Please enter a reason for visit" });
@@ -127,8 +166,20 @@ export default function NewEncounterPage() {
         selectedPatient?.full_name || newPatient.full_name,
         reasonForVisit,
         selectedPatient?.id,
-        user?.id
+        user?.id,
+        selectedTemplateId || undefined
       );
+      
+      // If template was selected, generate questions for this encounter
+      if (selectedTemplateId && result.encounterId) {
+        try {
+          await generateQuestions(selectedTemplateId, result.encounterId);
+        } catch (err) {
+          console.error("Failed to generate questions:", err);
+          // Don't fail the encounter creation if questions fail
+        }
+      }
+      
       if (result.livekitToken) sessionStorage.setItem(`livekit_token_${result.encounterId}`, result.livekitToken);
       if (result.roomName) sessionStorage.setItem(`livekit_room_${result.encounterId}`, result.roomName);
       router.push(`/encounter/${result.encounterId}`);
@@ -175,13 +226,18 @@ export default function NewEncounterPage() {
 
         {/* Step Indicators */}
         <div className="flex items-center gap-4 mb-16">
-          <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${step !== 'reason' ? "bg-white border-primary-200 shadow-soft" : "bg-surface-100 border-transparent opacity-50"}`}>
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${step !== 'reason' ? "bg-primary-500 text-white" : "bg-ink-200 text-ink-400"}`}>1</div>
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${step === 'select' || step === 'new-patient' ? "bg-white border-primary-200 shadow-soft" : "bg-surface-100 border-transparent opacity-50"}`}>
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${step === 'select' || step === 'new-patient' ? "bg-primary-500 text-white" : "bg-ink-200 text-ink-400"}`}>1</div>
             <span className="text-xs font-bold uppercase tracking-widest">Patient</span>
           </div>
           <div className="w-8 h-px bg-surface-200" />
+          <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${step === 'template' ? "bg-white border-primary-200 shadow-soft" : "bg-surface-100 border-transparent opacity-50"}`}>
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${step === 'template' ? "bg-primary-500 text-white" : "bg-ink-200 text-ink-400"}`}>2</div>
+            <span className="text-xs font-bold uppercase tracking-widest">Template</span>
+          </div>
+          <div className="w-8 h-px bg-surface-200" />
           <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border transition-all ${step === 'reason' ? "bg-white border-primary-200 shadow-soft" : "bg-surface-100 border-transparent opacity-50"}`}>
-            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${step === 'reason' ? "bg-primary-500 text-white" : "bg-ink-200 text-ink-400"}`}>2</div>
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black ${step === 'reason' ? "bg-primary-500 text-white" : "bg-ink-200 text-ink-400"}`}>3</div>
             <span className="text-xs font-bold uppercase tracking-widest">Visit Context</span>
           </div>
         </div>
@@ -216,7 +272,7 @@ export default function NewEncounterPage() {
                   {patients.map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => { setSelectedPatient(p); setStep("reason"); }}
+                      onClick={() => { setSelectedPatient(p); setStep("template"); }}
                       className="w-full flex items-center justify-between p-5 bg-white border border-surface-100 rounded-2xl hover:border-primary-300 hover:shadow-soft transition-all group"
                     >
                       <div className="flex items-center gap-4 text-left">
@@ -317,7 +373,7 @@ export default function NewEncounterPage() {
                     const { data, error } = await supabase.from("patients").insert({ ...newPatient, mrn }).select().single();
                     if (error) throw error;
                     setSelectedPatient(data);
-                    setStep("reason");
+                    setStep("template");
                   } catch (e: any) { setError(e.message); } finally { setIsLoading(false); }
                 }}
                 disabled={isLoading}
@@ -329,7 +385,74 @@ export default function NewEncounterPage() {
           </div>
         )}
 
-        {/* Step 2: Visit Details */}
+        {/* Step 2: Template Selection */}
+        {step === "template" && selectedPatient && (
+          <div className="space-y-10 animate-fade-in">
+            <section className="bg-white rounded-[2.5rem] p-10 border border-surface-200 shadow-soft-xl">
+              <div className="flex items-center justify-between mb-10">
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 rounded-[1.5rem] bg-indigo-500 flex items-center justify-center shadow-glow">
+                    <FileText className="w-8 h-8 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-ink-900">EHR Template</h3>
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mt-1">
+                      {selectedPatient.full_name} • Visit #{visitCount + 1}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => { setStep("select"); setSelectedTemplateId(null); setGeneratedQuestions([]); }} 
+                  className="text-xs font-black text-ink-300 hover:text-ink-900 transition-colors uppercase tracking-widest"
+                >
+                  Change Patient
+                </button>
+              </div>
+
+              <TemplateUpload
+                onTemplateUploaded={handleTemplateUploaded}
+                onTemplateSelected={handleTemplateSelected}
+                existingTemplates={templates}
+              />
+
+              {selectedTemplateId && generatedQuestions.length > 0 && (
+                <div className="mt-8 p-6 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <div className="flex items-center gap-3 mb-3">
+                    <Sparkles className="w-5 h-5 text-emerald-600" />
+                    <p className="font-bold text-emerald-900">
+                      {generatedQuestions.length} questions generated
+                    </p>
+                  </div>
+                  <p className="text-sm text-emerald-700">
+                    These questions will guide your conversation with the patient.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 mt-8">
+                <button
+                  onClick={() => {
+                    setSelectedTemplateId(null);
+                    setGeneratedQuestions([]);
+                    setStep("reason");
+                  }}
+                  className="flex-1 h-14 bg-surface-100 text-ink-700 rounded-2xl font-bold hover:bg-surface-200 transition-all flex items-center justify-center gap-3"
+                >
+                  Skip Template
+                </button>
+                <button
+                  onClick={() => setStep("reason")}
+                  className="flex-1 h-14 bg-primary-500 text-white rounded-2xl font-bold hover:bg-primary-600 transition-all flex items-center justify-center gap-3"
+                >
+                  Continue to Visit Details
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Step 3: Visit Details */}
         {step === "reason" && selectedPatient && (
           <div className="space-y-10 animate-fade-in">
             <section className="bg-white rounded-[2.5rem] p-10 border border-surface-200 shadow-soft-xl">
@@ -343,7 +466,14 @@ export default function NewEncounterPage() {
                     <p className="text-[10px] font-black text-primary-500 uppercase tracking-[0.2em] mt-1">Visit #{visitCount + 1} • {selectedPatient.mrn}</p>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedPatient(null); setStep("select"); }} className="text-xs font-black text-ink-300 hover:text-ink-900 transition-colors uppercase tracking-widest">Change Patient</button>
+                <div className="flex items-center gap-3">
+                  {selectedTemplateId && (
+                    <div className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold">
+                      Template Selected
+                    </div>
+                  )}
+                  <button onClick={() => { setSelectedPatient(null); setStep("select"); setSelectedTemplateId(null); setGeneratedQuestions([]); }} className="text-xs font-black text-ink-300 hover:text-ink-900 transition-colors uppercase tracking-widest">Change Patient</button>
+                </div>
               </div>
 
               <div className="space-y-2">

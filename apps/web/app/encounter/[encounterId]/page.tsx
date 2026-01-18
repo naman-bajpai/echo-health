@@ -9,6 +9,7 @@ import FieldsPanel from "@/components/FieldsPanel";
 import DraftNotePanel from "@/components/DraftNotePanel";
 import ReferralPanel from "@/components/ReferralPanel";
 import SummaryPanel from "@/components/SummaryPanel";
+import ClinicalFocusPanel from "@/components/ClinicalFocusPanel";
 import { RealtimeNotesPanel } from "@/components/RealtimeNotesPanel";
 import {
   getEncounter,
@@ -28,6 +29,7 @@ import {
   analyzeEncounter,
   generateDiagnosis,
   generateAll,
+  getSmartClinicalAnalysis,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
 import type {
@@ -69,8 +71,11 @@ export default function EncounterPage() {
   >([]);
   const [summary, setSummary] = useState<PatientSummary | null>(null);
   const [diagnosis, setDiagnosis] = useState<DiagnosisResult | null>(null);
+  const [billingCodes, setBillingCodes] = useState<any | null>(null);
+  const [clinicalFocus, setClinicalFocus] = useState<any | null>(null);
   const [urgencyAssessment, setUrgencyAssessment] =
     useState<UrgencyAssessment | null>(null);
+  const [isLoadingClinicalFocus, setIsLoadingClinicalFocus] = useState(false);
 
   const [currentMode, setCurrentMode] = useState<PanelMode>("transcript");
   const [isLoading, setIsLoading] = useState(true);
@@ -121,6 +126,8 @@ export default function EncounterPage() {
             if (art.type === "draft_note") setDraftNote(art.content as DraftNote);
             if (art.type === "summary") setSummary(art.content as PatientSummary);
             if (art.type === "diagnosis") setDiagnosis(art.content as DiagnosisResult);
+            if (art.type === "billing_codes") setBillingCodes(art.content);
+            if (art.type === "clinical_focus") setClinicalFocus(art.content);
           });
         }
       } catch (err) {
@@ -158,6 +165,8 @@ export default function EncounterPage() {
             const p = payload.new as any;
             if (p.type === "draft_note") setDraftNote(p.content as DraftNote);
             else if (p.type === "summary") setSummary(p.content as PatientSummary);
+            else if (p.type === "billing_codes") setBillingCodes(p.content);
+            else if (p.type === "clinical_focus") setClinicalFocus(p.content);
           }
         }
       )
@@ -220,6 +229,7 @@ export default function EncounterPage() {
       const result = await generateAll(encounterId);
       setDraftNote(result.draftNote);
       setSummary(result.summary);
+      if (result.billingCodes) setBillingCodes(result.billingCodes);
       const updated = await getEncounter(encounterId);
       if (updated) setEncounter(updated);
     } catch (err) {
@@ -260,6 +270,18 @@ export default function EncounterPage() {
   const handleGenerateDiagnosis = useCallback(async () => {
     const result = await generateDiagnosis(encounterId);
     setDiagnosis(result.diagnosis);
+  }, [encounterId]);
+  
+  const handleRefreshClinicalFocus = useCallback(async () => {
+    setIsLoadingClinicalFocus(true);
+    try {
+      const result = await getSmartClinicalAnalysis(encounterId);
+      setClinicalFocus(result.clinicalFocus);
+    } catch (err) {
+      console.error("Failed to get clinical focus:", err);
+    } finally {
+      setIsLoadingClinicalFocus(false);
+    }
   }, [encounterId]);
   const handleDownloadPdf = useCallback(async () => {
     const result = await getSummaryPdfUrl(encounterId);
@@ -406,7 +428,7 @@ export default function EncounterPage() {
                   />
                 </div>
                 <div className="w-[320px] shrink-0 bg-surface-50/30">
-                  <RealtimeNotesPanel className="h-full" />
+                  <RealtimeNotesPanel className="h-full" clinicalFocus={clinicalFocus} encounterId={encounterId} />
                 </div>
               </div>
             ) : currentMode === "fields" ? (
@@ -415,8 +437,10 @@ export default function EncounterPage() {
               <DraftNotePanel draftNote={draftNote} onGenerate={handleGenerateDraftNote} />
             ) : currentMode === "referral" ? (
               <ReferralPanel providers={providers} referrals={referrals} onSearch={handleSearchReferrals} onApprove={handleApproveReferral} recommendedSpecialist={encounter.recommended_specialist} />
+            ) : currentMode === "clinical-focus" ? (
+              <ClinicalFocusPanel clinicalFocus={clinicalFocus} onRefresh={handleRefreshClinicalFocus} isLoading={isLoadingClinicalFocus} />
             ) : (
-              <SummaryPanel summary={summary} diagnosis={diagnosis} onGenerate={handleGenerateSummary} onGenerateDiagnosis={handleGenerateDiagnosis} onDownloadPdf={handleDownloadPdf} onNarrate={handleNarrate} isGeneratingDiagnosis={false} />
+              <SummaryPanel summary={summary} diagnosis={diagnosis} billingCodes={billingCodes} onGenerate={handleGenerateSummary} onGenerateDiagnosis={handleGenerateDiagnosis} onDownloadPdf={handleDownloadPdf} onNarrate={handleNarrate} isGeneratingDiagnosis={false} />
             )}
           </div>
         </main>

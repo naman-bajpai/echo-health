@@ -17,12 +17,13 @@ import {
   ShieldCheck,
   AlertTriangle,
 } from "lucide-react";
-import type { PatientSummary, DiagnosisResult } from "@/lib/types";
+import type { PatientSummary, DiagnosisResult, BillingCodesResult } from "@/lib/types";
 import { PATIENT_DISCLAIMER } from "@/lib/safety";
 
 interface SummaryPanelProps {
   summary: PatientSummary | null;
   diagnosis?: DiagnosisResult | null;
+  billingCodes?: BillingCodesResult | null;
   onGenerate: () => Promise<void>;
   onGenerateDiagnosis?: () => Promise<void>;
   onDownloadPdf: () => Promise<void>;
@@ -35,6 +36,7 @@ interface SummaryPanelProps {
 export default function SummaryPanel({
   summary,
   diagnosis,
+  billingCodes,
   onGenerate,
   onGenerateDiagnosis,
   onDownloadPdf,
@@ -238,6 +240,89 @@ export default function SummaryPanel({
                 </section>
               </div>
             </div>
+
+            {/* Billing Codes */}
+            {billingCodes && (
+              <section className="bg-gradient-to-br from-indigo-50 to-white rounded-[2rem] p-8 border border-indigo-100 shadow-soft">
+                <div className="flex items-center gap-3 mb-6">
+                  <FileCheck className="w-5 h-5 text-indigo-500" />
+                  <h3 className="font-bold text-ink-900">Billing Codes</h3>
+                </div>
+                
+                {/* ICD-10 Codes */}
+                {billingCodes.icd10_codes && billingCodes.icd10_codes.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-xs font-bold text-ink-600 mb-3 uppercase tracking-wider">ICD-10 Diagnosis Codes</h4>
+                    <div className="space-y-3">
+                      {billingCodes.icd10_codes.map((code: any, index: number) => (
+                        <div key={index} className="bg-white p-4 rounded-xl border border-indigo-100">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono font-bold text-indigo-700 text-base">{code.code}</span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  code.confidence === "high" 
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : code.confidence === "medium"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-700"
+                                }`}>
+                                  {code.confidence} confidence
+                                </span>
+                              </div>
+                              <p className="text-sm text-ink-700 font-medium">{code.description}</p>
+                              {code.rationale && (
+                                <p className="text-xs text-ink-500 mt-2">{code.rationale}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* CPT Codes */}
+                {billingCodes.cpt_codes && billingCodes.cpt_codes.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-bold text-ink-600 mb-3 uppercase tracking-wider">CPT Procedure Codes</h4>
+                    <div className="space-y-3">
+                      {billingCodes.cpt_codes.map((code: any, index: number) => (
+                        <div key={index} className="bg-white p-4 rounded-xl border border-indigo-100">
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono font-bold text-indigo-700 text-base">{code.code}</span>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  code.confidence === "high" 
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : code.confidence === "medium"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : "bg-slate-100 text-slate-700"
+                                }`}>
+                                  {code.confidence} confidence
+                                </span>
+                              </div>
+                              <p className="text-sm text-ink-700 font-medium">{code.description}</p>
+                              {code.rationale && (
+                                <p className="text-xs text-ink-500 mt-2">{code.rationale}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Billing Disclaimer */}
+                {billingCodes.disclaimer && (
+                  <div className="mt-6 bg-amber-50 rounded-xl p-4 border border-amber-200">
+                    <p className="text-xs text-amber-800 leading-relaxed">{billingCodes.disclaimer}</p>
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* Disclaimer */}
             <div className="flex items-center gap-4 px-8 py-6 bg-surface-100 rounded-3xl opacity-60 border border-surface-200">
