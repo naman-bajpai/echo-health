@@ -12,12 +12,14 @@ import {
   Edit3,
   X,
   Plus,
+  ArrowRight,
+  Activity,
 } from "lucide-react";
 import type { ExtractedFields, Encounter } from "@/lib/types";
 
 interface FieldsPanelProps {
   fields: ExtractedFields | null;
-  encounter?: Encounter | null; // Pre-populate from encounter data
+  encounter?: Encounter | null;
   onExtract: () => Promise<void>;
   onUpdate?: (fields: ExtractedFields) => void;
   isLoading?: boolean;
@@ -33,23 +35,18 @@ export default function FieldsPanel({
   disabled,
 }: FieldsPanelProps) {
   const [isExtracting, setIsExtracting] = useState(false);
-  const [editableFields, setEditableFields] = useState<ExtractedFields | null>(
-    null
-  );
+  const [editableFields, setEditableFields] = useState<ExtractedFields | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  // Sync editable fields with props, pre-populate from encounter data
   useEffect(() => {
-    // Start with encounter data, then overlay AI-extracted fields
     const baseFields: ExtractedFields = {
       patient_name: encounter?.patient_name || "",
       dob: encounter?.patient_dob || "",
       reason_for_visit: encounter?.reason_for_visit || "",
     };
-
     if (fields) {
-      // Merge AI fields, but keep encounter data for name/dob/reason if AI didn't extract them
       setEditableFields({
         ...baseFields,
         ...fields,
@@ -58,349 +55,228 @@ export default function FieldsPanel({
         reason_for_visit: fields.reason_for_visit || baseFields.reason_for_visit,
       });
     } else if (encounter) {
-      // Show encounter data even before AI extraction
       setEditableFields(baseFields);
     }
   }, [fields, encounter]);
 
-  const handleExtract = async () => {
-    setIsExtracting(true);
-    try {
-      await onExtract();
-    } finally {
-      setIsExtracting(false);
-    }
+  const validate = () => {
+    if (!editableFields) return false;
+    const errors: Record<string, string> = {};
+    if (!editableFields.patient_name?.trim()) errors.patient_name = "Name is required";
+    if (!editableFields.dob?.trim()) errors.dob = "Birth date is required";
+    if (!editableFields.reason_for_visit?.trim()) errors.reason_for_visit = "Reason for visit is required";
+    
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleFieldChange = (field: keyof ExtractedFields, value: any) => {
     if (!editableFields) return;
     setEditableFields({ ...editableFields, [field]: value });
     setHasChanges(true);
-  };
-
-  const handleSymptomChange = (index: number, value: string) => {
-    if (!editableFields) return;
-    const currentSymptoms = editableFields.symptoms || [];
-    const newSymptoms = [...currentSymptoms];
-    newSymptoms[index] = value;
-    setEditableFields({ ...editableFields, symptoms: newSymptoms });
-    setHasChanges(true);
-  };
-
-  const handleAddSymptom = () => {
-    if (!editableFields) return;
-    const currentSymptoms = editableFields.symptoms || [];
-    setEditableFields({
-      ...editableFields,
-      symptoms: [...currentSymptoms, ""],
-    });
-    setHasChanges(true);
-  };
-
-  const handleRemoveSymptom = (index: number) => {
-    if (!editableFields) return;
-    const currentSymptoms = editableFields.symptoms || [];
-    const newSymptoms = currentSymptoms.filter((_, i) => i !== index);
-    setEditableFields({ ...editableFields, symptoms: newSymptoms });
-    setHasChanges(true);
+    if (fieldErrors[field]) {
+      setFieldErrors({ ...fieldErrors, [field]: "" });
+    }
   };
 
   const handleSave = () => {
     if (editableFields && onUpdate) {
+      if (!validate()) return;
       onUpdate(editableFields);
       setHasChanges(false);
       setIsEditing(false);
     }
   };
 
-  const handleCancel = () => {
-    if (fields) {
-      setEditableFields({ ...fields });
-    }
-    setHasChanges(false);
-    setIsEditing(false);
-  };
-
   const loading = isLoading || isExtracting;
   const displayFields = editableFields || fields;
 
   return (
-    <div className="p-6 h-full overflow-y-auto bg-white">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-accent-100 rounded-2xl flex items-center justify-center">
-              <FileText className="w-6 h-6 text-accent-600" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-ink-800">
-                Extracted Fields
-              </h2>
-              <p className="text-ink-500 mt-0.5">
-                AI-powered field extraction from transcript
-              </p>
-            </div>
+    <div className="h-full bg-white overflow-y-auto">
+      <div className="max-w-4xl mx-auto px-12 py-16">
+        {/* Header Section */}
+        <div className="flex items-end justify-between mb-12">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-bold tracking-tight text-ink-900">Clinical Data</h2>
+            <p className="text-ink-400 font-medium">Extracted intelligence from patient consultation</p>
           </div>
-          <div className="flex gap-3">
+          
+          <div className="flex items-center gap-3">
             {displayFields && (
-              <>
-                {isEditing ? (
-                  <>
-                    <button
-                      onClick={handleCancel}
-                      className="btn-secondary text-sm px-4 py-2"
-                    >
-                      <X className="w-4 h-4" />
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      disabled={!hasChanges}
-                      className="btn-success text-sm px-4 py-2"
-                    >
-                      <Save className="w-4 h-4" />
-                      Save
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="btn-secondary text-sm px-4 py-2"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    Edit
-                  </button>
-                )}
-              </>
+              <button
+                onClick={() => isEditing ? handleSave() : setIsEditing(true)}
+                disabled={isEditing && !hasChanges}
+                className={`
+                  flex items-center gap-2 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all
+                  ${isEditing 
+                    ? (hasChanges ? "bg-emerald-500 text-white shadow-glow" : "bg-surface-100 text-ink-300 cursor-not-allowed") 
+                    : "bg-surface-100 text-ink-600 hover:bg-surface-200"}
+                `}
+              >
+                {isEditing ? <Save className="w-4 h-4" /> : <Edit3 className="w-4 h-4" />}
+                {isEditing ? "Commit Changes" : "Refine Data"}
+              </button>
             )}
+            
             <button
-              onClick={handleExtract}
+              onClick={async () => { setIsExtracting(true); try { await onExtract(); } finally { setIsExtracting(false); } }}
               disabled={disabled || loading}
-              className="btn-primary text-sm px-4 py-2"
+              className="flex items-center gap-2 px-5 py-2.5 bg-ink-900 text-white rounded-2xl font-bold text-sm shadow-soft hover:bg-black transition-all disabled:opacity-50"
             >
-              {loading ? (
-                <RefreshCw className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {loading
-                ? "Extracting..."
-                : displayFields
-                ? "Re-extract"
-                : "Extract Fields"}
+              {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {displayFields ? "Re-analyze" : "Run Extraction"}
             </button>
           </div>
         </div>
 
         {!displayFields ? (
-          <div className="text-center py-20">
-            <div className="w-24 h-24 bg-accent-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
-              <FileText className="w-12 h-12 text-accent-400" />
+          <div className="py-24 flex flex-col items-center text-center">
+            <div className="w-20 h-20 bg-primary-50 rounded-3xl flex items-center justify-center mb-6">
+              <FileText className="w-10 h-10 text-primary-300" />
             </div>
-            <h3 className="text-xl font-bold text-ink-700 mb-3">
-              No fields extracted yet
-            </h3>
-            <p className="text-ink-500 max-w-sm mx-auto">
-              Record some conversation first, then click "Extract Fields" to
-              analyze the transcript with AI.
-            </p>
+            <h3 className="text-xl font-bold text-ink-900">Waiting for Insight</h3>
+            <p className="text-ink-400 max-w-xs mt-2">Start the consultation to extract patient information and clinical fields.</p>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Edit mode indicator */}
-            {isEditing && (
-              <div className="panel-card-primary flex items-center gap-3">
-                <Edit3 className="w-5 h-5 text-primary-600" />
-                <div>
-                  <p className="font-semibold text-primary-800">Edit Mode</p>
-                  <p className="text-sm text-primary-600">
-                    Modify any field, then click "Save" when done.
-                  </p>
+          <div className="grid gap-8">
+            {/* Primary Info Row */}
+            <div className="grid md:grid-cols-2 gap-8">
+              {/* Identity Card */}
+              <section className="bg-surface-50/50 rounded-4xl p-8 border border-surface-100">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-10 h-10 bg-white rounded-2xl shadow-soft flex items-center justify-center">
+                    <User className="w-5 h-5 text-primary-500" />
+                  </div>
+                  <h3 className="font-bold text-ink-900">Patient Identity</h3>
                 </div>
-              </div>
-            )}
-
-            {/* Patient Info Card */}
-            <div className="card p-6">
-              <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 bg-primary-100 rounded-xl flex items-center justify-center">
-                  <User className="w-5 h-5 text-primary-600" />
-                </div>
-                Patient Information
-              </h3>
-              <div className="grid sm:grid-cols-2 gap-6">
-                <EditableField
-                  label="Name"
-                  value={displayFields.patient_name || ""}
-                  onChange={(v) => handleFieldChange("patient_name", v)}
-                  isEditing={isEditing}
-                />
-                <EditableField
-                  label="Date of Birth"
-                  value={displayFields.dob || ""}
-                  onChange={(v) => handleFieldChange("dob", v)}
-                  isEditing={isEditing}
-                  icon={<Calendar className="w-4 h-4 text-ink-400" />}
-                />
-              </div>
-            </div>
-
-            {/* Visit Info Card */}
-            <div className="card p-6">
-              <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                <div className="w-10 h-10 bg-sage-100 rounded-xl flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-sage-600" />
-                </div>
-                Visit Information
-              </h3>
-              <EditableField
-                label="Reason for Visit"
-                value={displayFields.reason_for_visit || ""}
-                onChange={(v) => handleFieldChange("reason_for_visit", v)}
-                isEditing={isEditing}
-                multiline
-              />
-              {(displayFields.symptom_duration || isEditing) && (
-                <div className="mt-5">
-                  <EditableField
-                    label="Symptom Duration"
-                    value={displayFields.symptom_duration || ""}
-                    onChange={(v) => handleFieldChange("symptom_duration", v)}
-                    isEditing={isEditing}
+                
+                <div className="space-y-6">
+                  <EditableField 
+                    label="Full Name" 
+                    value={displayFields.patient_name || ""} 
+                    onChange={(v: string) => handleFieldChange("patient_name", v)} 
+                    isEditing={isEditing} 
+                    error={fieldErrors.patient_name}
+                  />
+                  <EditableField 
+                    label="Date of Birth" 
+                    value={displayFields.dob || ""} 
+                    onChange={(v: string) => handleFieldChange("dob", v)} 
+                    isEditing={isEditing} 
+                    icon={<Calendar className="w-3.5 h-3.5" />} 
+                    error={fieldErrors.dob}
                   />
                 </div>
-              )}
+              </section>
+
+              {/* Consultation Context Card */}
+              <section className="bg-surface-50/50 rounded-4xl p-8 border border-surface-100">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-10 h-10 bg-white rounded-2xl shadow-soft flex items-center justify-center">
+                    <Activity className="w-5 h-5 text-accent-500" />
+                  </div>
+                  <h3 className="font-bold text-ink-900">Visit Context</h3>
+                </div>
+                
+                <div className="space-y-6">
+                  <EditableField 
+                    label="Reason for Visit" 
+                    value={displayFields.reason_for_visit || ""} 
+                    onChange={(v: string) => handleFieldChange("reason_for_visit", v)} 
+                    isEditing={isEditing} 
+                    multiline 
+                    error={fieldErrors.reason_for_visit}
+                  />
+                  <EditableField 
+                    label="Reported Duration" 
+                    value={displayFields.symptom_duration || ""} 
+                    onChange={(v: string) => handleFieldChange("symptom_duration", v)} 
+                    isEditing={isEditing} 
+                  />
+                </div>
+              </section>
             </div>
 
-            {/* Symptoms Card */}
-            {((displayFields.symptoms && displayFields.symptoms.length > 0) ||
-              isEditing) && (
-              <div className="card p-6">
-                <h3 className="font-bold text-ink-800 mb-5 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-accent-100 rounded-xl flex items-center justify-center">
-                    <AlertCircle className="w-5 h-5 text-accent-600" />
+            {/* Symptoms & Clinical Signals */}
+            <section className="bg-white rounded-4xl p-8 border border-surface-200 shadow-soft">
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-accent-50 rounded-2xl flex items-center justify-center text-accent-600">
+                    <AlertCircle className="w-5 h-5" />
                   </div>
-                  Patient-Reported Symptoms
-                </h3>
-                <ul className="space-y-3">
-                  {(displayFields.symptoms || []).map((symptom, index) => (
-                    <li
-                      key={index}
-                      className="flex items-start gap-3 bg-surface-50 p-4 rounded-xl"
-                    >
-                      <span className="flex-shrink-0 w-7 h-7 bg-accent-100 text-accent-700 rounded-lg flex items-center justify-center text-sm font-bold">
-                        {index + 1}
-                      </span>
-                      {isEditing ? (
-                        <div className="flex-1 flex gap-2">
-                          <input
-                            type="text"
-                            value={symptom}
-                            onChange={(e) =>
-                              handleSymptomChange(index, e.target.value)
-                            }
-                            className="input text-sm py-2"
-                          />
-                          <button
-                            onClick={() => handleRemoveSymptom(index)}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-ink-700 italic pt-1">
-                          {symptom}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
+                  <h3 className="font-bold text-ink-900 text-lg">Reported Symptoms</h3>
+                </div>
+                {!isEditing && (
+                  <div className="flex items-center gap-2 text-2xs font-bold text-accent-600 bg-accent-50 px-3 py-1 rounded-full uppercase tracking-wider">
+                    Verbatim Analysis
+                  </div>
+                )}
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4">
+                {(displayFields.symptoms || []).map((symptom, idx) => (
+                  <div key={idx} className="flex items-center gap-4 p-4 bg-surface-50 rounded-2xl border border-transparent hover:border-surface-200 transition-all">
+                    <div className="w-6 h-6 bg-white rounded-lg flex items-center justify-center text-[10px] font-bold text-ink-400 shadow-sm border border-surface-100">
+                      {idx + 1}
+                    </div>
+                    {isEditing ? (
+                      <input 
+                        type="text" 
+                        value={symptom} 
+                        onChange={(e) => {
+                          const s = [...(displayFields.symptoms || [])];
+                          s[idx] = e.target.value;
+                          handleFieldChange("symptoms", s);
+                        }}
+                        className="flex-1 bg-transparent border-b border-surface-200 focus:border-primary-400 focus:outline-none text-sm py-1 font-medium" 
+                      />
+                    ) : (
+                      <span className="text-sm font-medium text-ink-700">{symptom}</span>
+                    )}
+                    {isEditing && (
+                      <button 
+                        onClick={() => {
+                          const s = (displayFields.symptoms || []).filter((_, i) => i !== idx);
+                          handleFieldChange("symptoms", s);
+                        }}
+                        className="text-ink-300 hover:text-red-500 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
                 {isEditing && (
-                  <button
-                    onClick={handleAddSymptom}
-                    className="mt-4 text-sm text-accent-600 hover:text-accent-700 font-semibold flex items-center gap-1"
+                  <button 
+                    onClick={() => handleFieldChange("symptoms", [...(displayFields.symptoms || []), ""])}
+                    className="flex items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-surface-200 text-ink-400 hover:text-primary-500 hover:border-primary-200 transition-all text-sm font-bold"
                   >
                     <Plus className="w-4 h-4" />
-                    Add symptom
+                    Record New Symptom
                   </button>
                 )}
-                <p className="text-xs text-ink-400 mt-5 flex items-center gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  Verbatim patient statements - not clinical interpretation
-                </p>
               </div>
-            )}
+            </section>
 
-            {/* Allergies & Medications */}
-            {((displayFields.allergies && displayFields.allergies.length > 0) ||
-              (displayFields.medications &&
-                displayFields.medications.length > 0) ||
-              isEditing) && (
-              <div className="grid sm:grid-cols-2 gap-5">
-                <div className="card p-5 bg-red-50/50 border-red-100">
-                  <h3 className="font-bold text-red-800 mb-4">Allergies</h3>
-                  {isEditing ? (
-                    <EditableList
-                      items={displayFields.allergies || []}
-                      onChange={(items) => handleFieldChange("allergies", items)}
-                      color="red"
-                    />
-                  ) : (
-                    <ul className="space-y-2">
-                      {(displayFields.allergies || []).map((allergy, index) => (
-                        <li
-                          key={index}
-                          className="text-sm text-red-700 flex items-center gap-2"
-                        >
-                          <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
-                          {allergy}
-                        </li>
-                      ))}
-                      {(!displayFields.allergies ||
-                        displayFields.allergies.length === 0) && (
-                        <li className="text-sm text-ink-400 italic">
-                          None recorded
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-
-                <div className="card p-5 bg-purple-50/50 border-purple-100">
-                  <h3 className="font-bold text-purple-800 mb-4">
-                    Current Medications
-                  </h3>
-                  {isEditing ? (
-                    <EditableList
-                      items={displayFields.medications || []}
-                      onChange={(items) =>
-                        handleFieldChange("medications", items)
-                      }
-                      color="purple"
-                    />
-                  ) : (
-                    <ul className="space-y-2">
-                      {(displayFields.medications || []).map((med, index) => (
-                        <li
-                          key={index}
-                          className="text-sm text-purple-700 flex items-center gap-2"
-                        >
-                          <span className="w-1.5 h-1.5 bg-purple-500 rounded-full" />
-                          {med}
-                        </li>
-                      ))}
-                      {(!displayFields.medications ||
-                        displayFields.medications.length === 0) && (
-                        <li className="text-sm text-ink-400 italic">
-                          None recorded
-                        </li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* Safety Signals: Allergies & Meds */}
+            <div className="grid md:grid-cols-2 gap-8">
+              <SignalCard 
+                title="Known Allergies" 
+                items={displayFields.allergies || []} 
+                icon={<AlertCircle className="w-5 h-5" />}
+                color="red"
+                isEditing={isEditing}
+                onUpdate={(items: string[]) => handleFieldChange("allergies", items)}
+              />
+              <SignalCard 
+                title="Current Medications" 
+                items={displayFields.medications || []} 
+                icon={<FileText className="w-5 h-5" />}
+                color="purple"
+                isEditing={isEditing}
+                onUpdate={(items: string[]) => handleFieldChange("medications", items)}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -408,107 +284,92 @@ export default function FieldsPanel({
   );
 }
 
-function EditableField({
-  label,
-  value,
-  onChange,
-  isEditing,
-  icon,
-  multiline,
-}: {
+function EditableField({ label, value, onChange, isEditing, icon, multiline, error }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   isEditing: boolean;
   icon?: React.ReactNode;
   multiline?: boolean;
+  error?: string;
 }) {
   return (
-    <div>
-      <label className="text-xs text-ink-500 uppercase tracking-wider font-semibold flex items-center gap-1.5 mb-2">
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold text-ink-400 uppercase tracking-widest flex items-center gap-2">
         {icon}
         {label}
       </label>
       {isEditing ? (
         multiline ? (
-          <textarea
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            rows={3}
-            className="input text-sm resize-none"
-          />
+          <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={`w-full bg-white border ${error ? "border-red-500 ring-2 ring-red-50" : "border-surface-200"} rounded-xl p-3 text-sm focus:ring-2 ring-primary-100 focus:border-primary-400 transition-all resize-none`} />
         ) : (
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="input text-sm py-2.5"
-          />
+          <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={`w-full bg-white border ${error ? "border-red-500 ring-2 ring-red-50" : "border-surface-200"} rounded-xl px-4 py-2 text-sm focus:ring-2 ring-primary-100 focus:border-primary-400 transition-all`} />
         )
       ) : (
-        <p className="text-ink-800 font-medium">
-          {value || (
-            <span className="text-ink-400 italic font-normal">Not provided</span>
-          )}
+        <p className="text-sm font-bold text-ink-800 leading-relaxed min-h-[1.25rem]">
+          {value || <span className="text-ink-200 italic font-medium">Not disclosed</span>}
         </p>
       )}
+      {isEditing && error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{error}</p>}
     </div>
   );
 }
 
-function EditableList({
-  items,
-  onChange,
-  color,
-}: {
+function SignalCard({ title, items, icon, color, isEditing, onUpdate }: {
+  title: string;
   items: string[];
-  onChange: (items: string[]) => void;
+  icon: React.ReactNode;
   color: "red" | "purple";
+  isEditing: boolean;
+  onUpdate: (items: string[]) => void;
 }) {
-  const handleItemChange = (index: number, value: string) => {
-    const newItems = [...items];
-    newItems[index] = value;
-    onChange(newItems);
-  };
-
-  const handleAdd = () => {
-    onChange([...items, ""]);
-  };
-
-  const handleRemove = (index: number) => {
-    onChange(items.filter((_, i) => i !== index));
-  };
-
-  const colorClasses = {
-    red: "text-red-600 hover:bg-red-100",
-    purple: "text-purple-600 hover:bg-purple-100",
+  const baseColors: Record<string, string> = {
+    red: "bg-red-50 text-red-600 border-red-100",
+    purple: "bg-primary-50 text-primary-600 border-primary-100"
   };
 
   return (
-    <div className="space-y-2">
-      {items.map((item, index) => (
-        <div key={index} className="flex gap-2">
-          <input
-            type="text"
-            value={item}
-            onChange={(e) => handleItemChange(index, e.target.value)}
-            className="input text-sm py-2"
-          />
-          <button
-            onClick={() => handleRemove(index)}
-            className={`p-2 rounded-xl transition-colors ${colorClasses[color]}`}
-          >
-            <X className="w-4 h-4" />
-          </button>
+    <div className={`p-8 rounded-4xl border ${baseColors[color]}`}>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 bg-white/80 rounded-2xl flex items-center justify-center shadow-inner-soft">
+          {icon}
         </div>
-      ))}
-      <button
-        onClick={handleAdd}
-        className={`text-sm font-semibold flex items-center gap-1 ${colorClasses[color]}`}
-      >
-        <Plus className="w-4 h-4" />
-        Add item
-      </button>
+        <h3 className="font-bold text-ink-900">{title}</h3>
+      </div>
+      
+      <div className="space-y-3">
+        {items.map((item: string, idx: number) => (
+          <div key={idx} className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-white/50">
+            <div className={`w-1.5 h-1.5 rounded-full ${color === 'red' ? 'bg-red-400' : 'bg-primary-400'}`} />
+            {isEditing ? (
+              <input 
+                type="text" 
+                value={item} 
+                onChange={(e) => {
+                  const newItems = [...items];
+                  newItems[idx] = e.target.value;
+                  onUpdate(newItems);
+                }}
+                className="flex-1 bg-transparent focus:outline-none text-sm font-medium" 
+              />
+            ) : (
+              <span className="text-sm font-bold text-ink-800">{item}</span>
+            )}
+            {isEditing && (
+              <button onClick={() => onUpdate(items.filter((_: any, i: number) => i !== idx))} className="text-ink-300 hover:text-red-500">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+        {isEditing && (
+          <button onClick={() => onUpdate([...items, ""])} className="w-full py-2 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest opacity-60 hover:opacity-100 transition-all">
+            <Plus className="w-3.5 h-3.5" />
+            Add Entry
+          </button>
+        )}
+        {!isEditing && items.length === 0 && <p className="text-xs italic text-ink-400/60">No signals detected</p>}
+      </div>
     </div>
   );
 }

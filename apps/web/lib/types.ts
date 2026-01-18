@@ -33,6 +33,15 @@ export interface Patient {
   emergency_phone?: string;
   insurance_provider?: string;
   insurance_id?: string;
+  gender?: string;
+  blood_type?: string;
+  weight_kg?: number;
+  height_cm?: number;
+  allergies?: string[];
+  current_medications?: string[];
+  past_medical_history?: string;
+  primary_language?: string;
+  ethnicity?: string;
   created_at: string;
   updated_at: string;
 }

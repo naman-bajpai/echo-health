@@ -1,9 +1,9 @@
 // Generate Draft Note Edge Function
-// Uses Claude to generate SOAP notes
+// Uses OpenAI/ChatGPT to generate SOAP notes
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { callClaudeJSON, isConfigured as isClaudeConfigured } from "../_shared/claude.ts";
+import { callOpenAIJSON, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
 
 interface GenerateDraftNoteRequest {
   encounterId: string;
@@ -62,8 +62,8 @@ serve(async (req: Request) => {
       disclaimer: "DRAFT ONLY - This note was AI-generated and requires clinician review and approval before use in medical records.",
     };
 
-    if (isClaudeConfigured()) {
-      const prompt = `You are a medical documentation assistant. Generate a professional SOAP note from this patient encounter.
+    if (isOpenAIConfigured()) {
+      const prompt = `You are a medical documentation assistant. Analyze the entire patient encounter transcript and generate a professional SOAP note.
 
 TRANSCRIPT:
 ${transcriptText}
@@ -71,7 +71,7 @@ ${transcriptText}
 EXTRACTED FIELDS:
 ${JSON.stringify(extractedFields, null, 2)}
 
-Generate a SOAP note following this format:
+Analyze everything in the transcript and generate a comprehensive SOAP note following this format:
 
 SUBJECTIVE (S): Patient's complaints, symptoms, and history as they reported
 OBJECTIVE (O): Clinical findings, vital signs, examination results mentioned
@@ -79,11 +79,13 @@ ASSESSMENT (A): Clinical impression - MUST be marked as DRAFT requiring physicia
 PLAN (P): Treatment recommendations - MUST be marked as DRAFT requiring physician approval
 
 IMPORTANT RULES:
+- Analyze the ENTIRE transcript thoroughly
 - Do NOT make definitive diagnoses
 - Mark all clinical assessments as "[DRAFT - Requires physician review]"
 - Only document information from the transcript
 - Use professional medical terminology
 - Be concise but thorough
+- Include all relevant information from the conversation
 
 Respond with JSON only:
 {
@@ -93,7 +95,9 @@ Respond with JSON only:
   "plan": "[DRAFT - Requires physician approval] Recommended treatment..."
 }`;
 
-      const result = await callClaudeJSON<Partial<DraftNote>>(prompt);
+      const result = await callOpenAIJSON<Partial<DraftNote>>(prompt, {
+        systemPrompt: "You are a medical documentation assistant. Generate professional SOAP notes from patient encounter transcripts. Always respond with valid JSON only.",
+      });
       if (result) {
         draftNote = { ...draftNote, ...result };
       }
@@ -127,12 +131,12 @@ Respond with JSON only:
       draftNote.plan = "[DRAFT - Requires physician approval] Treatment plan to be determined based on complete encounter.";
     }
 
-    // Save as artifact
-    await supabaseAdmin.from("artifacts").insert({
+    // Save as artifact (upsert to update if exists, insert if new)
+    await supabaseAdmin.from("artifacts").upsert({
       encounter_id: encounterId,
       type: "draft_note",
       content: draftNote,
-    });
+    }, { onConflict: "encounter_id,type" });
 
     return jsonResponse({
       draftNote,

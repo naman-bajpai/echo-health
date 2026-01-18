@@ -244,6 +244,17 @@ export async function generateDiagnosis(
 }
 
 /**
+ * Generate both SOAP note and summary in one call
+ */
+export async function generateAll(
+  encounterId: string
+): Promise<{ draftNote: any; summary: any; encounterId: string }> {
+  return callFunction("generate-all", {
+    encounterId,
+  });
+}
+
+/**
  * Log trace event
  */
 export async function logTrace(

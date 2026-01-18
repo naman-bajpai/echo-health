@@ -1,9 +1,9 @@
 // Generate Summary Edge Function
-// Uses Claude to create patient-friendly visit summaries
+// Uses OpenAI/ChatGPT to create patient-friendly visit summaries
 import { serve } from "https://deno.land/std@0.208.0/http/server.ts";
 import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
-import { callClaudeJSON, isConfigured as isClaudeConfigured } from "../_shared/claude.ts";
+import { callOpenAIJSON, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
 
 interface GenerateSummaryRequest {
   encounterId: string;
@@ -33,9 +33,9 @@ serve(async (req: Request) => {
       return errorResponse("encounterId is required");
     }
 
-    // Debug: Check if Claude is configured
-    const claudeConfigured = isClaudeConfigured();
-    console.log(`Claude API configured: ${claudeConfigured}`);
+    // Debug: Check if OpenAI is configured
+    const openAIConfigured = isOpenAIConfigured();
+    console.log(`OpenAI API configured: ${openAIConfigured}`);
 
     // Get encounter
     const { data: encounter, error: encounterError } = await supabaseAdmin
@@ -94,10 +94,10 @@ serve(async (req: Request) => {
 
     let aiUsed = false;
 
-    if (claudeConfigured && transcriptText.length > 10) {
-      console.log("Calling Claude API for summary generation...");
+    if (openAIConfigured && transcriptText.length > 10) {
+      console.log("Calling OpenAI API for summary generation...");
       
-      const prompt = `You are creating a patient-friendly visit summary. Write in clear, simple language that anyone can understand.
+      const prompt = `You are creating a patient-friendly visit summary. Analyze the entire transcript and write in clear, simple language that anyone can understand.
 
 PATIENT: ${encounter?.patient_name || "Unknown"}
 REASON FOR VISIT: ${encounter?.reason_for_visit || "Not specified"}
@@ -108,20 +108,21 @@ ${transcriptText}
 EXTRACTED INFORMATION:
 ${JSON.stringify(fields, null, 2)}
 
-Create a summary that a patient can take home and understand. Use simple, non-medical language where possible.
+Analyze everything in the transcript and create a comprehensive summary that a patient can take home and understand. Use simple, non-medical language where possible.
 
 IMPORTANT RULES:
+- Analyze the ENTIRE transcript thoroughly
 - Do NOT make definitive diagnoses - use phrases like "discussed" or "being evaluated for"
 - Do NOT recommend specific treatments not discussed in the visit
-- Mark any clinical decisions as "[Pending doctor confirmation]"
 - Be warm and reassuring in tone
 - Include practical next steps
 - Base ALL content on the actual transcript - don't make up symptoms or treatments
+- Include all relevant information from the conversation
 
 Respond with JSON only:
 {
   "visit_summary": "Brief 2-3 sentence summary of the visit in friendly language based on actual transcript",
-  "diagnoses": ["[Pending doctor review] Conditions being evaluated or discussed in the transcript"],
+  "diagnoses": ["Conditions being evaluated or discussed in the transcript"],
   "treatment_plan": ["Steps discussed for care and treatment in the conversation"],
   "medications": ["Any medications discussed (with instructions if mentioned)"],
   "follow_up": "When and how to follow up as discussed",
@@ -129,17 +130,19 @@ Respond with JSON only:
   "warning_signs": ["Symptoms that should prompt calling the doctor or seeking emergency care"]
 }`;
 
-      const result = await callClaudeJSON<Partial<PatientSummary>>(prompt);
+      const result = await callOpenAIJSON<Partial<PatientSummary>>(prompt, {
+        systemPrompt: "You are a medical documentation assistant creating patient-friendly visit summaries. Always respond with valid JSON only.",
+      });
       
       if (result) {
-        console.log("Claude response received successfully");
+        console.log("OpenAI response received successfully");
         summary = { ...summary, ...result };
         aiUsed = true;
       } else {
-        console.log("Claude returned no result, using fallback");
+        console.log("OpenAI returned no result, using fallback");
       }
     } else {
-      console.log(`Using fallback (Claude configured: ${claudeConfigured}, transcript length: ${transcriptText.length})`);
+      console.log(`Using fallback (OpenAI configured: ${openAIConfigured}, transcript length: ${transcriptText.length})`);
     }
 
     // Fallback if AI didn't work - use full transcript (both patient and provider)
@@ -188,7 +191,7 @@ Respond with JSON only:
       console.error("Artifact save error:", artifactError);
     }
 
-    // Update encounter status
+    // Update encounter status (no approval required - summary is auto-generated)
     await supabaseAdmin
       .from("encounters")
       .update({ status: "checkout" })
@@ -198,7 +201,7 @@ Respond with JSON only:
       summary,
       encounterId,
       debug: {
-        claudeConfigured,
+        openAIConfigured,
         aiUsed,
         transcriptChunks: chunks?.length || 0,
         hasExtractedFields: !!fieldsArtifact,

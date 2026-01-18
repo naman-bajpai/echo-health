@@ -22,8 +22,8 @@ import {
   Users,
   User,
   Activity,
-  TrendingUp,
   Sparkles,
+  ArrowUpRight,
 } from "lucide-react";
 import type { Encounter, Patient } from "@/lib/types";
 
@@ -37,20 +37,17 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterUrgency, setFilterUrgency] = useState<string>("all");
 
-  // Redirect if no role selected
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/");
     }
   }, [authLoading, user, router]);
 
-  // Load encounters
   useEffect(() => {
     if (!user) return;
 
     const loadData = async () => {
       setIsLoading(true);
-
       const [encountersRes, patientsRes] = await Promise.all([
         supabase
           .from("encounters")
@@ -66,370 +63,234 @@ export default function DashboardPage() {
 
       if (encountersRes.data) setEncounters(encountersRes.data);
       if (patientsRes.data) setPatients(patientsRes.data);
-
       setIsLoading(false);
     };
 
     loadData();
   }, [user]);
 
-  const handleSignOut = () => {
-    signOut();
-    router.push("/");
-  };
-
-  // Filter encounters
   const filteredEncounters = encounters.filter((enc) => {
     const matchesSearch =
       !searchQuery ||
       enc.patient_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       enc.reason_for_visit?.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesUrgency =
-      filterUrgency === "all" || enc.urgency === filterUrgency;
-
+    const matchesUrgency = filterUrgency === "all" || enc.urgency === filterUrgency;
     return matchesSearch && matchesUrgency;
   });
 
-  const urgencyConfig = {
-    routine: {
-      icon: CheckCircle,
-      label: "Routine",
-      bg: "bg-sage-50",
-      text: "text-sage-700",
-      border: "border-sage-200",
-      dot: "bg-sage-500",
-    },
-    urgent: {
-      icon: Clock,
-      label: "Urgent",
-      bg: "bg-amber-50",
-      text: "text-amber-700",
-      border: "border-amber-200",
-      dot: "bg-amber-500",
-    },
-    emergent: {
-      icon: AlertTriangle,
-      label: "Emergent",
-      bg: "bg-red-50",
-      text: "text-red-700",
-      border: "border-red-200",
-      dot: "bg-red-500 animate-pulse",
-    },
+  const urgencyConfig: any = {
+    routine: { icon: CheckCircle, label: "Routine", color: "text-sage-600", bg: "bg-sage-50" },
+    urgent: { icon: Clock, label: "Urgent", color: "text-amber-600", bg: "bg-amber-50" },
+    emergent: { icon: AlertTriangle, label: "Emergent", color: "text-red-600", bg: "bg-red-50" },
   };
 
   if (authLoading || !user) {
     return (
-      <div className="min-h-screen bg-surface-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
-          </div>
-          <p className="text-ink-500 font-medium">Loading...</p>
-        </div>
+      <div className="h-screen flex items-center justify-center bg-white">
+        <Activity className="w-10 h-10 text-primary-500 animate-pulse" />
       </div>
     );
   }
 
-  const todayEncounters = encounters.filter(
-    (e) => new Date(e.created_at).toDateString() === new Date().toDateString()
-  ).length;
-
-  const urgentCases = encounters.filter((e) => e.urgency === "urgent").length;
-  const needSpecialist = encounters.filter((e) => e.specialist_needed).length;
+  const stats = [
+    { label: "Today's Visits", value: encounters.filter(e => new Date(e.created_at).toDateString() === new Date().toDateString()).length, icon: Calendar, color: "text-primary-500" },
+    { label: "Urgent Cases", value: encounters.filter(e => e.urgency === "urgent").length, icon: Clock, color: "text-amber-500" },
+    { label: "Pending Referrals", value: encounters.filter(e => e.specialist_needed).length, icon: Stethoscope, color: "text-purple-500" },
+    { label: "Total Patients", value: patients.length, icon: Users, color: "text-accent-500" },
+  ];
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <header className="bg-white/90 backdrop-blur-xl border-b border-primary-100 sticky top-0 z-50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex items-center justify-between h-20">
-            <Link href="/dashboard" className="flex items-center">
-              <Image
-                src={logo}
-                alt="Echo Health logo"
-                width={234}
-                height={69}
-                className="h-12 w-auto"
-                priority
-              />
-            </Link>
+    <div className="min-h-screen bg-surface-50/50 font-sans text-ink-900">
+      {/* Navbar */}
+      <nav className="h-20 bg-white/80 backdrop-blur-md border-b border-surface-200 sticky top-0 z-50 px-8">
+        <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
+          <div className="flex items-center gap-10">
+            <Image src={logo} alt="Echo Health" width={110} height={32} className="h-8 w-auto opacity-90" />
+            <div className="hidden md:flex items-center gap-6">
+              <Link href="/dashboard" className="text-sm font-bold text-ink-900 border-b-2 border-primary-500 pb-1">Dashboard</Link>
+              <Link href="/patients" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Patient Registry</Link>
+              <Link href="/analytics" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Clinical Insights</Link>
+            </div>
+          </div>
 
-            <div className="flex items-center gap-4">
-              {/* User Info */}
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-surface-100 rounded-2xl border border-surface-200">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                    user.role === "doctor"
-                      ? "bg-sage-100"
-                      : "bg-primary-100"
-                  }`}
-                >
-                  {user.role === "doctor" ? (
-                    <Stethoscope className="w-5 h-5 text-sage-600" />
-                  ) : (
-                    <BadgeCheck className="w-5 h-5 text-primary-600" />
-                  )}
-                </div>
-                <div className="hidden sm:block">
-                  <p className="text-sm font-semibold text-ink-800">
-                    {user.full_name}
-                  </p>
-                  <p className="text-xs text-ink-500 capitalize">{user.role}</p>
-                </div>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 pl-4 border-l border-surface-200">
+              <div className="text-right hidden sm:block">
+                <p className="text-xs font-black text-ink-900 leading-none">{user.full_name}</p>
+                <p className="text-[10px] font-bold text-primary-500 uppercase tracking-widest mt-1">{user.role}</p>
               </div>
-
-              <button
-                onClick={handleSignOut}
-                className="p-2.5 text-ink-400 hover:text-ink-600 hover:bg-surface-100 rounded-xl transition-colors"
-                title="Sign out"
-              >
-                <LogOut className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center shadow-inner-soft">
+                <User className="w-5 h-5 text-primary-600" />
+              </div>
+              <button onClick={() => signOut()} className="p-2 text-ink-300 hover:text-red-500 transition-colors">
+                <LogOut className="w-4 h-4" />
               </button>
             </div>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-10">
-        {/* Welcome Section */}
-        <div className="mb-10">
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-3xl">
-              {new Date().getHours() < 12 ? "☀️" : new Date().getHours() < 18 ? "🌤️" : "🌙"}
-            </span>
-            <h1 className="text-3xl font-bold text-ink-800">
-              Welcome back, {user.full_name.split(" ")[0]}
+      <main className="max-w-7xl mx-auto px-8 py-12">
+        {/* Hero Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-8 mb-16">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary-500" />
+              <span className="text-xs font-black text-primary-500 uppercase tracking-[0.2em]">Clinical Workspace</span>
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight text-ink-900">
+              Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {user.full_name.split(" ")[0]}
             </h1>
-          </div>
-          <p className="text-ink-500 text-lg">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-10">
-          <div className="stat-card card p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-4xl font-bold text-ink-800 mb-1">
-                  {todayEncounters}
-                </p>
-                <p className="text-sm text-ink-500 font-medium">
-                  Today's Encounters
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-primary-100 rounded-2xl flex items-center justify-center">
-                <Calendar className="w-6 h-6 text-primary-600" />
-              </div>
-            </div>
+            <p className="text-ink-400 font-medium text-lg">
+              {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+            </p>
           </div>
 
-          <div className="stat-card card p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-4xl font-bold text-ink-800 mb-1">
-                  {urgentCases}
-                </p>
-                <p className="text-sm text-ink-500 font-medium">Urgent Cases</p>
-              </div>
-              <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center">
-                <Clock className="w-6 h-6 text-amber-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="stat-card card p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-4xl font-bold text-ink-800 mb-1">
-                  {needSpecialist}
-                </p>
-                <p className="text-sm text-ink-500 font-medium">
-                  Need Specialist
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-accent-100 rounded-2xl flex items-center justify-center">
-                <Stethoscope className="w-6 h-6 text-accent-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="stat-card card p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-4xl font-bold text-ink-800 mb-1">
-                  {patients.length}
-                </p>
-                <p className="text-sm text-ink-500 font-medium">
-                  Total Patients
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-sage-100 rounded-2xl flex items-center justify-center">
-                <Users className="w-6 h-6 text-sage-600" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* New Encounter CTA */}
-        <div className="mb-8">
           <Link
             href="/new-encounter"
-            className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white font-semibold rounded-2xl shadow-soft hover:shadow-glow transition-all duration-300 group"
+            className="flex items-center gap-3 px-8 py-4 bg-ink-900 text-white rounded-[2rem] font-bold shadow-soft-xl hover:bg-black hover:-translate-y-1 transition-all group"
           >
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-              <Plus className="w-6 h-6" />
-            </div>
-            <div className="text-left">
-              <span className="block text-lg">New Encounter</span>
-              <span className="text-primary-200 text-sm font-normal">
-                Start documenting a patient visit
-              </span>
-            </div>
-            <ChevronRight className="w-5 h-5 ml-4 group-hover:translate-x-1 transition-transform" />
+            <Plus className="w-5 h-5" />
+            <span>Initiate New Encounter</span>
+            <ArrowUpRight className="w-4 h-4 ml-2 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
           </Link>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-ink-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search patients or visits..."
-              className="input-minimal pl-12"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            {["all", "routine", "urgent", "emergent"].map((filter) => (
-              <button
-                key={filter}
-                onClick={() => setFilterUrgency(filter)}
-                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  filterUrgency === filter
-                    ? "bg-primary-600 text-white shadow-soft"
-                    : "bg-white text-ink-600 border border-surface-200 hover:border-primary-300"
-                }`}
-              >
-                {filter.charAt(0).toUpperCase() + filter.slice(1)}
-              </button>
-            ))}
-          </div>
+        {/* Intelligence Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+          {stats.map((stat, i) => (
+            <div key={i} className="bg-white rounded-3xl p-6 border border-surface-200 shadow-soft group hover:border-primary-200 transition-all">
+              <div className="flex items-center gap-4 mb-4">
+                <div className={`w-10 h-10 rounded-xl bg-surface-50 flex items-center justify-center ${stat.color} group-hover:scale-110 transition-transform`}>
+                  <stat.icon className="w-5 h-5" />
+                </div>
+                <span className="text-[10px] font-black text-ink-400 uppercase tracking-widest">{stat.label}</span>
+              </div>
+              <p className="text-3xl font-bold text-ink-900">{stat.value}</p>
+            </div>
+          ))}
         </div>
 
-        {/* Encounters List */}
-        <div className="card overflow-hidden">
-          <div className="px-6 py-5 border-b border-surface-200 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-ink-800">
-                Recent Encounters
-              </h2>
-              <p className="text-sm text-ink-500 mt-0.5">
-                {filteredEncounters.length} encounters found
-              </p>
+        {/* Content Section */}
+        <div className="bg-white rounded-[2.5rem] shadow-soft-xl border border-surface-200 overflow-hidden">
+          {/* List Toolbar */}
+          <div className="p-8 border-b border-surface-100 flex flex-col md:flex-row md:items-center justify-between gap-6 bg-surface-50/30">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-bold text-ink-900">Patient Encounters</h2>
+              <div className="px-3 py-1 bg-white rounded-full border border-surface-200 text-[10px] font-black text-ink-400 uppercase tracking-widest shadow-sm">
+                {filteredEncounters.length} Total
+              </div>
             </div>
-            <Activity className="w-5 h-5 text-ink-400" />
+
+            <div className="flex items-center gap-3 flex-1 max-w-xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-300" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by patient or reason..."
+                  className="w-full bg-white border border-surface-200 rounded-2xl pl-11 pr-4 py-2.5 text-sm focus:ring-4 ring-primary-50 outline-none transition-all"
+                />
+              </div>
+              
+              <div className="flex p-1 bg-surface-100 rounded-2xl border border-surface-200">
+                {["all", "urgent", "emergent"].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilterUrgency(f)}
+                    className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      filterUrgency === f ? "bg-white text-ink-900 shadow-sm" : "text-ink-400 hover:text-ink-600"
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
-          {isLoading ? (
-            <div className="p-16 text-center">
-              <div className="w-16 h-16 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+          {/* List Content */}
+          <div className="overflow-x-auto">
+            {isLoading ? (
+              <div className="py-32 flex flex-col items-center gap-4">
+                <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+                <p className="text-xs font-bold text-ink-300 uppercase tracking-widest">Synchronizing records...</p>
               </div>
-              <p className="text-ink-500 font-medium">Loading encounters...</p>
-            </div>
-          ) : filteredEncounters.length === 0 ? (
-            <div className="p-16 text-center">
-              <div className="w-20 h-20 bg-surface-100 rounded-3xl flex items-center justify-center mx-auto mb-5">
-                <Calendar className="w-10 h-10 text-ink-300" />
+            ) : filteredEncounters.length === 0 ? (
+              <div className="py-32 flex flex-col items-center text-center px-8">
+                <div className="w-20 h-20 bg-surface-50 rounded-[2rem] flex items-center justify-center mb-6">
+                  <Activity className="w-10 h-10 text-ink-200" />
+                </div>
+                <h3 className="text-lg font-bold text-ink-900">No records matching your search</h3>
+                <p className="text-ink-400 text-sm mt-1">Adjust your filters or initiate a new encounter to begin documenting.</p>
               </div>
-              <h3 className="text-xl font-bold text-ink-800 mb-2">
-                No encounters found
-              </h3>
-              <p className="text-ink-500 mb-6">
-                Start a new encounter to get started
-              </p>
-              <Link
-                href="/new-encounter"
-                className="inline-flex items-center gap-2 text-primary-600 font-semibold hover:text-primary-700"
-              >
-                <Plus className="w-5 h-5" />
-                New Encounter
-              </Link>
-            </div>
-          ) : (
-            <div className="divide-y divide-surface-200">
-              {filteredEncounters.map((encounter) => {
-                const urgency =
-                  urgencyConfig[encounter.urgency] || urgencyConfig.routine;
-                const UrgencyIcon = urgency.icon;
-
-                return (
-                  <Link
-                    key={encounter.id}
-                    href={`/encounter/${encounter.id}`}
-                    className="flex items-center justify-between p-5 hover:bg-surface-50 transition-colors group"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 bg-surface-100 rounded-2xl flex items-center justify-center group-hover:bg-primary-100 transition-colors">
-                        <User className="w-7 h-7 text-ink-400 group-hover:text-primary-600 transition-colors" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-3">
-                          <p className="font-semibold text-ink-800 text-lg">
-                            {encounter.patient_name || "Unknown Patient"}
+            ) : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-surface-50/50 text-[10px] font-black text-ink-300 uppercase tracking-[0.2em] border-b border-surface-100">
+                    <th className="px-8 py-4 font-black">Patient Identity</th>
+                    <th className="px-8 py-4 font-black">Visit Context</th>
+                    <th className="px-8 py-4 font-black text-center">Urgency</th>
+                    <th className="px-8 py-4 font-black text-right">Consultation Date</th>
+                    <th className="px-8 py-4"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-100">
+                  {filteredEncounters.map((enc) => {
+                    const cfg = urgencyConfig[enc.urgency] || urgencyConfig.routine;
+                    return (
+                      <tr key={enc.id} onClick={() => router.push(`/encounter/${enc.id}`)} className="group cursor-pointer hover:bg-primary-50/30 transition-all">
+                        <td className="px-8 py-6">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 rounded-2xl bg-surface-50 border border-surface-100 flex items-center justify-center group-hover:bg-white group-hover:border-primary-200 group-hover:shadow-soft transition-all">
+                              <User className="w-5 h-5 text-ink-400 group-hover:text-primary-500 transition-colors" />
+                            </div>
+                            <div>
+                              <p className="font-bold text-ink-900 text-base">{enc.patient_name || "Anonymous Patient"}</p>
+                              {enc.visit_number && enc.visit_number > 1 && (
+                                <span className="text-[10px] font-black text-primary-500 uppercase tracking-tighter">Follow-up Visit #{enc.visit_number}</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-6">
+                          <p className="text-sm font-medium text-ink-600 line-clamp-1 max-w-xs">{enc.reason_for_visit || "General Consultation"}</p>
+                          {enc.specialist_needed && (
+                            <span className="flex items-center gap-1.5 mt-1 text-[10px] font-bold text-purple-600 uppercase tracking-widest">
+                              <Stethoscope className="w-3 h-3" />
+                              Referral: {enc.recommended_specialist}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-8 py-6">
+                          <div className="flex justify-center">
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${cfg.bg} ${cfg.color} border-current/10 shadow-sm`}>
+                              <div className={`w-1 h-1 rounded-full bg-current ${enc.urgency === 'emergent' ? 'animate-pulse' : ''}`} />
+                              <span className="text-[10px] font-black uppercase tracking-wider">{cfg.label}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          <p className="text-sm font-bold text-ink-900">
+                            {new Date(enc.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                           </p>
-                          {encounter.visit_number &&
-                            encounter.visit_number > 1 && (
-                              <span className="badge badge-primary">
-                                Visit #{encounter.visit_number}
-                              </span>
-                            )}
-                        </div>
-                        <p className="text-ink-500 mt-0.5">
-                          {encounter.reason_for_visit || "No reason specified"}
-                        </p>
-                        <p className="text-xs text-ink-400 mt-1">
-                          {new Date(encounter.created_at).toLocaleString()}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {encounter.specialist_needed && (
-                        <span className="badge bg-purple-100 text-purple-700">
-                          <Stethoscope className="w-3.5 h-3.5" />
-                          {encounter.recommended_specialist || "Specialist"}
-                        </span>
-                      )}
-
-                      <span
-                        className={`badge ${urgency.bg} ${urgency.text} border ${urgency.border}`}
-                      >
-                        <span
-                          className={`w-2 h-2 rounded-full ${urgency.dot}`}
-                        />
-                        <UrgencyIcon className="w-3.5 h-3.5" />
-                        {urgency.label}
-                      </span>
-
-                      <ChevronRight className="w-5 h-5 text-ink-300 group-hover:text-primary-600 group-hover:translate-x-1 transition-all" />
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
+                          <p className="text-[10px] font-medium text-ink-300 uppercase tracking-widest mt-0.5">
+                            {new Date(enc.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </td>
+                        <td className="px-8 py-6 text-right">
+                          <div className="inline-flex w-10 h-10 rounded-xl border border-surface-200 items-center justify-center opacity-0 group-hover:opacity-100 group-hover:bg-white group-hover:text-primary-500 transition-all">
+                            <ChevronRight className="w-5 h-5" />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </main>
     </div>

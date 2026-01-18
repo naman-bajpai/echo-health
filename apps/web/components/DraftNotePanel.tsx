@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RefreshCw, FileText, AlertTriangle, Sparkles, ClipboardList } from "lucide-react";
+import { RefreshCw, FileText, AlertTriangle, Sparkles, ClipboardList, ShieldCheck } from "lucide-react";
 import type { DraftNote } from "@/lib/types";
 import { DRAFT_WARNING } from "@/lib/safety";
 
@@ -32,89 +32,76 @@ export default function DraftNotePanel({
   const loading = isLoading || isGenerating;
 
   return (
-    <div className="p-6 h-full overflow-y-auto bg-white">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-10">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-sage-100 rounded-2xl flex items-center justify-center">
-              <ClipboardList className="w-6 h-6 text-sage-600" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-ink-800">Draft SOAP Note</h2>
-              <p className="text-ink-500 mt-0.5">
-                AI-generated clinical documentation
-              </p>
+    <div className="h-full bg-surface-50 overflow-y-auto">
+      <div className="max-w-4xl mx-auto px-12 py-16">
+        {/* Document Header */}
+        <div className="flex items-end justify-between mb-12">
+          <div className="space-y-1">
+            <h2 className="text-3xl font-bold tracking-tight text-ink-900">SOAP Documentation</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-primary-500 bg-primary-50 px-2 py-0.5 rounded-md">AI DRAFT</span>
+              <p className="text-ink-400 font-medium">Auto-generated clinical note</p>
             </div>
           </div>
+          
           <button
             onClick={handleGenerate}
             disabled={disabled || loading}
-            className="btn-primary text-sm px-4 py-2"
+            className="flex items-center gap-2 px-6 py-3 bg-ink-900 text-white rounded-2xl font-bold text-sm shadow-soft-lg hover:bg-black transition-all disabled:opacity-50"
           >
-            {loading ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            {loading ? "Generating..." : draftNote ? "Regenerate" : "Generate Note"}
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {draftNote ? "Refresh Note" : "Generate SOAP"}
           </button>
         </div>
 
         {!draftNote ? (
-          <div className="text-center py-20">
-            <div className="w-24 h-24 bg-sage-50 rounded-3xl flex items-center justify-center mx-auto mb-6">
-              <FileText className="w-12 h-12 text-sage-400" />
+          <div className="py-24 flex flex-col items-center text-center">
+            <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-soft">
+              <ClipboardList className="w-10 h-10 text-primary-200" />
             </div>
-            <h3 className="text-xl font-bold text-ink-700 mb-3">
-              No draft note generated yet
-            </h3>
-            <p className="text-ink-500 max-w-sm mx-auto">
-              Click "Generate Note" to create a SOAP note from the transcript.
-            </p>
+            <h3 className="text-xl font-bold text-ink-900">Documentation Pending</h3>
+            <p className="text-ink-400 max-w-xs mt-2">The SOAP note will be generated based on the consultation transcript and extracted fields.</p>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Draft Warning Banner */}
-            <div className="bg-accent-50 border border-accent-200 rounded-2xl p-5 flex items-start gap-4">
-              <div className="w-10 h-10 bg-accent-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="w-5 h-5 text-accent-600" />
+          <div className="space-y-10 animate-fade-in">
+            {/* Safety Disclaimer */}
+            <div className="bg-amber-50/50 rounded-3xl p-6 border border-amber-100 flex items-start gap-4 shadow-inner-soft">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0 shadow-soft">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
               </div>
               <div>
-                <p className="font-semibold text-accent-800">Draft Document</p>
-                <p className="text-sm text-accent-700 mt-1">{DRAFT_WARNING}</p>
+                <p className="text-sm font-bold text-amber-900 mb-1">Clinician Review Required</p>
+                <p className="text-xs text-amber-700/80 leading-relaxed font-medium">{DRAFT_WARNING}</p>
               </div>
             </div>
 
-            {/* SOAP Note Content */}
-            <div className="card p-8 draft-watermark relative">
-              <div className="relative z-10 space-y-8">
-                <NoteSection
-                  title="Subjective"
-                  content={draftNote.subjective}
-                  color="primary"
-                />
-                <NoteSection
-                  title="Objective"
-                  content={draftNote.objective}
-                  color="sage"
-                />
-                <NoteSection
-                  title="Assessment"
-                  content={draftNote.assessment}
-                  color="accent"
-                />
-                <NoteSection
-                  title="Plan"
-                  content={draftNote.plan}
-                  color="purple"
-                />
+            {/* The Document */}
+            <div className="bg-white rounded-[2.5rem] p-12 shadow-soft-xl border border-surface-200 relative overflow-hidden">
+              {/* Subtle Document Texture/Watermark */}
+              <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                <ShieldCheck className="w-64 h-64" />
+              </div>
+
+              <div className="relative z-10 space-y-12">
+                <NoteSection label="S" title="Subjective" content={draftNote.subjective} color="primary" />
+                <NoteSection label="O" title="Objective" content={draftNote.objective} color="sage" />
+                <NoteSection label="A" title="Assessment" content={draftNote.assessment} color="accent" />
+                <NoteSection label="P" title="Plan" content={draftNote.plan} color="indigo" />
+              </div>
+
+              {/* Document Footer */}
+              <div className="mt-16 pt-8 border-t border-surface-100 flex items-center justify-between opacity-50">
+                <div className="text-[10px] font-bold text-ink-300 uppercase tracking-widest">
+                  Secure Medical Documentation System
+                </div>
+                <div className="text-[10px] font-bold text-ink-300 uppercase tracking-widest">
+                  Artifact ID: {Math.random().toString(36).substring(7).toUpperCase()}
+                </div>
               </div>
             </div>
 
-            {/* Compliance Notice */}
-            <p className="text-xs text-ink-400 text-center">
-              This note contains no diagnoses or treatment recommendations per
-              compliance requirements.
+            <p className="text-center text-[10px] font-bold text-ink-300 uppercase tracking-[0.2em]">
+              End of Document
             </p>
           </div>
         )}
@@ -123,44 +110,29 @@ export default function DraftNotePanel({
   );
 }
 
-function NoteSection({
-  title,
-  content,
-  color,
-}: {
-  title: string;
-  content: string;
-  color: "primary" | "sage" | "accent" | "purple";
-}) {
-  const colorStyles = {
-    primary: "bg-primary-100 text-primary-700 border-primary-200",
-    sage: "bg-sage-100 text-sage-700 border-sage-200",
-    accent: "bg-accent-100 text-accent-700 border-accent-200",
-    purple: "bg-purple-100 text-purple-700 border-purple-200",
-  };
-
-  const borderColors = {
-    primary: "border-l-primary-400",
-    sage: "border-l-sage-400",
-    accent: "border-l-accent-400",
-    purple: "border-l-purple-400",
+function NoteSection({ label, title, content, color }: any) {
+  const styles: any = {
+    primary: { text: "text-primary-600", dot: "bg-primary-500" },
+    sage: { text: "text-sage-600", dot: "bg-sage-500" },
+    accent: { text: "text-accent-600", dot: "bg-accent-500" },
+    indigo: { text: "text-indigo-600", dot: "bg-indigo-500" },
   };
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-3">
-        <span
-          className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${colorStyles[color]}`}
-        >
+    <div className="group">
+      <div className="flex items-center gap-4 mb-4">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-white text-sm shadow-sm ${styles[color].dot}`}>
+          {label}
+        </div>
+        <h3 className={`font-bold uppercase tracking-widest text-xs ${styles[color].text}`}>
           {title}
-        </span>
+        </h3>
+        <div className="flex-1 h-px bg-surface-100 group-hover:bg-surface-200 transition-colors" />
       </div>
-      <div
-        className={`text-ink-700 whitespace-pre-wrap text-sm leading-relaxed pl-5 border-l-4 ${borderColors[color]} bg-surface-50 p-4 rounded-r-xl`}
-      >
-        {content || (
-          <span className="text-ink-400 italic">No content</span>
-        )}
+      <div className="pl-12">
+        <p className="text-sm font-medium text-ink-800 leading-loose whitespace-pre-wrap">
+          {content || "No information recorded for this section."}
+        </p>
       </div>
     </div>
   );

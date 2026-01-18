@@ -107,6 +107,35 @@ serve(async (req: Request) => {
       }
     }
 
+    // Auto-generate SOAP note after every transcript input (in background, don't block response)
+    // Run this asynchronously so it doesn't block the response
+    (async () => {
+      try {
+        // Auto-generate SOAP note on every transcript input
+        // The generate-draft-note function will update the existing note if one exists
+        console.log(`Auto-generating SOAP note for encounter ${encounterId} after new transcript input`);
+        // Call generate-draft-note function via HTTP (non-blocking)
+        const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          fetch(`${supabaseUrl}/functions/v1/generate-draft-note`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ encounterId }),
+          }).catch((e) => {
+            console.error("Error auto-generating SOAP note:", e);
+          });
+        }
+      } catch (e) {
+        console.error("Error auto-generating SOAP note:", e);
+        // Don't fail the request if auto-generation check fails
+      }
+    })();
+
     return jsonResponse({
       id: chunk.id,
       success: true,
