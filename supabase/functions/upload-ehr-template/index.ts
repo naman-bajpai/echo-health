@@ -12,6 +12,15 @@ interface UploadTemplateRequest {
   fileType?: string;
   fileData?: string; // Base64 encoded file data
   fileName?: string;
+  customFields?: string; // Custom fields definition
+}
+
+interface CustomField {
+  name: string;
+  type: "text" | "number" | "array" | "boolean" | "date";
+  required?: boolean;
+  placeholder?: string;
+  options?: string[]; // For select/dropdown
 }
 
 interface Question {
@@ -30,7 +39,7 @@ serve(async (req: Request) => {
 
   try {
     const body: UploadTemplateRequest = await req.json();
-    const { templateName, templateContent, fileUrl, fileType, fileData, fileName } = body;
+    const { templateName, templateContent, fileUrl, fileType, fileData, fileName, customFields } = body;
 
     if (!templateName) {
       return errorResponse("templateName is required");
@@ -51,30 +60,74 @@ serve(async (req: Request) => {
       return errorResponse("templateContent is required. Please provide the template text or upload a TXT file.");
     }
 
-    // Get user ID from auth header
+    // Get user ID from auth header (optional for demo mode)
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return errorResponse("Unauthorized", 401);
-    }
-
-    // Extract user ID from JWT (simplified - in production, verify the JWT)
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+    let userId: string | null = null;
     
-    if (authError || !user) {
-      return errorResponse("Unauthorized", 401);
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      // Only try to get user if it looks like a JWT (not the anon key)
+      if (token.includes(".") && token.split(".").length === 3) {
+        try {
+          const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+          if (!authError && user) {
+            userId = user.id;
+          }
+        } catch (e) {
+          // Ignore auth errors in demo mode
+          console.log("Auth check skipped (demo mode)");
+        }
+      }
     }
 
-    // Save template to database
+    // Parse custom fields
+    let parsedCustomFields: CustomField[] = [];
+    if (customFields && customFields.trim()) {
+      try {
+        // Try parsing as JSON first
+        const jsonFields = JSON.parse(customFields);
+        if (Array.isArray(jsonFields)) {
+          parsedCustomFields = jsonFields;
+        }
+      } catch {
+        // If not JSON, parse as simple text format: "Field Name: Type"
+        const lines = customFields.split('\n').filter(l => l.trim());
+        parsedCustomFields = lines.map((line, index) => {
+          const match = line.match(/^(.+?):\s*(.+?)(?:\s*\(required\))?$/i);
+          if (match) {
+            const [, name, type] = match;
+            return {
+              name: name.trim(),
+              type: (type.trim().toLowerCase() as CustomField["type"]) || "text",
+              required: line.toLowerCase().includes("required"),
+            };
+          }
+          // Fallback: treat whole line as field name
+          return {
+            name: line.trim(),
+            type: "text" as const,
+            required: false,
+          };
+        });
+      }
+    }
+
+    // Save template to database (uploaded_by is optional for demo mode)
+    const insertData: Record<string, unknown> = {
+      template_name: templateName,
+      template_content: templateContent,
+      file_url: fileUrl,
+      file_type: fileType,
+      custom_fields: parsedCustomFields.length > 0 ? parsedCustomFields : null,
+    };
+    
+    if (userId) {
+      insertData.uploaded_by = userId;
+    }
+
     const { data: template, error: templateError } = await supabaseAdmin
       .from("ehr_templates")
-      .insert({
-        uploaded_by: user.id,
-        template_name: templateName,
-        template_content: templateContent,
-        file_url: fileUrl,
-        file_type: fileType,
-      })
+      .insert(insertData)
       .select()
       .single();
 
@@ -83,9 +136,51 @@ serve(async (req: Request) => {
       return errorResponse("Failed to save template", 500);
     }
 
-    // Generate questions from template using ChatGPT
+    // Generate questions from template and custom fields using ChatGPT
     let questions: Question[] = [];
 
+    // First, generate questions from custom fields if provided
+    if (parsedCustomFields.length > 0 && isOpenAIConfigured()) {
+      const customFieldsPrompt = `Generate patient-friendly questions for these custom fields:
+
+${parsedCustomFields.map(f => `- ${f.name} (${f.type}${f.required ? ', required' : ''})`).join('\n')}
+
+For each field, create a clear, patient-friendly question that will help collect this information during intake.
+
+Return JSON:
+{
+  "questions": [
+    {
+      "id": "field_1",
+      "question": "What is your blood pressure?",
+      "category": "vital_signs",
+      "required": true,
+      "answered": false,
+      "field_mapping": "blood_pressure"
+    }
+  ]
+}`;
+
+      try {
+        const customQuestionsResult = await callOpenAIJSON<{ questions: Question[] }>(customFieldsPrompt, {
+          systemPrompt: "You are a medical intake assistant. Generate patient-friendly questions for custom EHR fields. Always return valid JSON only.",
+          maxTokens: 2000,
+        });
+
+        if (customQuestionsResult && customQuestionsResult.questions) {
+          questions = customQuestionsResult.questions.map((q, index) => ({
+            ...q,
+            id: q.id || `custom_${index + 1}`,
+            answered: false,
+            field_mapping: parsedCustomFields[index]?.name.toLowerCase().replace(/\s+/g, '_') || q.field_mapping,
+          }));
+        }
+      } catch (e) {
+        console.error("Error generating questions from custom fields:", e);
+      }
+    }
+
+    // Then generate additional questions from template content
     if (isOpenAIConfigured()) {
       const prompt = `You are a medical intake assistant. Analyze this EHR template and generate a comprehensive list of questions that a nurse should ask the patient during intake.
 
@@ -130,11 +225,13 @@ Respond with JSON only:
       });
 
       if (result && result.questions) {
-        questions = result.questions.map((q, index) => ({
+        // Merge template questions with custom field questions
+        const templateQuestions = result.questions.map((q, index) => ({
           ...q,
-          id: q.id || `q_${index + 1}`,
+          id: q.id || `template_q_${index + 1}`,
           answered: false,
         }));
+        questions = [...questions, ...templateQuestions];
       }
     }
 

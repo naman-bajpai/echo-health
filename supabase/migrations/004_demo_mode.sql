@@ -44,3 +44,8 @@ CREATE POLICY "Anon can insert artifacts" ON artifacts
 DROP POLICY IF EXISTS "Anon can update artifacts" ON artifacts;
 CREATE POLICY "Anon can update artifacts" ON artifacts
   FOR UPDATE TO anon USING (true);
+
+-- Allow anon to view doctors (profiles with role='doctor')
+DROP POLICY IF EXISTS "Anon can view doctors" ON profiles;
+CREATE POLICY "Anon can view doctors" ON profiles
+  FOR SELECT TO anon USING (role = 'doctor');

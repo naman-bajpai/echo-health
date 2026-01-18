@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { useToast } from "@/components/ToastProvider";
 
 interface TemplateUploadProps {
   onTemplateUploaded: (templateId: string, questions: any[]) => void;
@@ -34,7 +35,9 @@ export default function TemplateUpload({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [templateName, setTemplateName] = useState("");
   const [extractedText, setExtractedText] = useState("");
+  const { showError, showSuccess } = useToast();
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = async (file: File) => {
@@ -94,6 +97,7 @@ export default function TemplateUpload({
           templateName,
           templateContent,
           fileType: selectedFile?.type || selectedFile?.name.split(".").pop() || "txt",
+          customFields: customFields.trim() || undefined,
         }),
       });
 
@@ -104,10 +108,13 @@ export default function TemplateUpload({
 
       const result = await response.json();
       setUploadSuccess(true);
+      showSuccess("Template uploaded successfully");
       onTemplateUploaded(result.template.id, result.questions || []);
     } catch (error: any) {
       console.error("Upload error:", error);
-      setUploadError(error.message || "Failed to upload template");
+      const errorMsg = error.message || "Failed to upload template";
+      setUploadError(errorMsg);
+      showError(errorMsg);
     } finally {
       setIsUploading(false);
     }
@@ -136,10 +143,13 @@ export default function TemplateUpload({
       }
 
       const result = await response.json();
+      showSuccess("Questions generated successfully");
       onTemplateSelected(templateId, result.questions || []);
     } catch (error: any) {
       console.error("Generate questions error:", error);
-      setUploadError(error.message || "Failed to generate questions");
+      const errorMsg = error.message || "Failed to generate questions";
+      setUploadError(errorMsg);
+      showError(errorMsg);
     } finally {
       setIsGenerating(false);
     }
@@ -271,6 +281,37 @@ export default function TemplateUpload({
               onChange={(e) => setExtractedText(e.target.value)}
               placeholder="Paste your EHR template content here..."
               rows={8}
+              className="w-full p-4 bg-surface-50 border border-surface-200 rounded-xl font-mono text-sm focus:ring-4 ring-primary-50 outline-none focus:border-primary-200 transition-all resize-none"
+            />
+          </div>
+
+          {/* Custom Fields Input */}
+          <div>
+            <label className="text-xs font-bold text-ink-400 uppercase tracking-wider mb-2 block">
+              Custom Fields (Optional)
+            </label>
+            <p className="text-[10px] text-ink-300 mb-2">
+              Define custom fields you want to collect. One per line, format: "Field Name: Type" or JSON array.
+              <br />
+              Examples: "Blood Pressure: text", "Allergies: array", "Medications: array"
+            </p>
+            <textarea
+              value={customFields}
+              onChange={(e) => setCustomFields(e.target.value)}
+              placeholder={`Example formats:
+Blood Pressure: text
+Heart Rate: number
+Allergies: array
+Medications: array
+Past Surgeries: text
+Family History: text
+
+Or JSON:
+[
+  {"name": "Blood Pressure", "type": "text", "required": true},
+  {"name": "Allergies", "type": "array", "required": false}
+]`}
+              rows={6}
               className="w-full p-4 bg-surface-50 border border-surface-200 rounded-xl font-mono text-sm focus:ring-4 ring-primary-50 outline-none focus:border-primary-200 transition-all resize-none"
             />
           </div>

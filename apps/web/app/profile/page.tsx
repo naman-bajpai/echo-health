@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import logo from "@/logo.png";
+import { useToast } from "@/components/ToastProvider";
 import {
   User,
   Mail,
@@ -72,11 +73,13 @@ export default function ClinicianProfilePage() {
       if (error) throw error;
       
       setIsEditing(false);
+      showSuccess("Profile updated successfully");
       // We might need to refresh the auth context or local state here
       // For now, let's just refresh the page or rely on the fact that we updated the DB
-      window.location.reload();
+      setTimeout(() => window.location.reload(), 1000);
     } catch (e: any) {
-      alert(`Error updating profile: ${e.message}`);
+      console.error("Error updating profile:", e);
+      showError(`Failed to update profile: ${e.message || "Please try again"}`);
     } finally {
       setIsSaving(false);
     }

@@ -26,7 +26,12 @@ export default function GetStartedPage() {
 
   const handleStart = () => {
     setRole(selectedRole, userName || undefined);
-    router.push("/dashboard");
+    // Route based on role
+    if (selectedRole === "doctor") {
+      router.push("/doctor/dashboard");
+    } else {
+      router.push("/dashboard");
+    }
   };
 
   return (

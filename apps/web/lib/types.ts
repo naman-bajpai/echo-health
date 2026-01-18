@@ -61,6 +61,9 @@ export interface Encounter {
   urgency_reason?: string;
   room_name?: string;
   livekit_token?: string;
+  assigned_doctor_id?: string;
+  assigned_doctor_name?: string;
+  template_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +80,8 @@ export interface TranscriptChunk {
 export interface ExtractedFields {
   patient_name?: string;
   dob?: string;
+  email?: string;
+  phone?: string;
   chief_complaint?: string;
   reason_for_visit?: string;
   symptoms?: string[];

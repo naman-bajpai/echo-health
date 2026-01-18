@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import logo from "@/logo.png";
+import { useToast } from "@/components/ToastProvider";
 import {
   TrendingUp,
   Activity,
@@ -29,6 +30,7 @@ export default function ClinicalInsightsPage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
 
+  const { showError } = useToast();
   const [encounters, setEncounters] = useState<Encounter[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("30d");
@@ -42,13 +44,20 @@ export default function ClinicalInsightsPage() {
 
     const loadData = async () => {
       setIsLoading(true);
-      const { data } = await supabase
-        .from("encounters")
-        .select("*")
-        .order("created_at", { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from("encounters")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-      if (data) setEncounters(data);
-      setIsLoading(false);
+        if (error) throw error;
+        if (data) setEncounters(data);
+      } catch (err) {
+        console.error("Error loading analytics data:", err);
+        showError("Failed to load analytics data. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     loadData();
@@ -85,6 +94,41 @@ export default function ClinicalInsightsPage() {
   }, {});
 
   const sortedSpecialists = Object.entries(topSpecialists)
+    .sort(([, a]: any, [, b]: any) => b - a)
+    .slice(0, 5);
+
+  // Filter encounters by time range
+  const filteredEncounters = encounters.filter((enc) => {
+    if (timeRange === "All") return true;
+    const now = new Date();
+    const encounterDate = new Date(enc.created_at);
+    const daysAgo = parseInt(timeRange.replace("d", ""));
+    const cutoffDate = new Date(now.getTime() - daysAgo * 24 * 60 * 60 * 1000);
+    return encounterDate >= cutoffDate;
+  });
+
+  const filteredTotalEncounters = filteredEncounters.length;
+  const filteredUrgentRate = filteredTotalEncounters > 0 
+    ? ((filteredEncounters.filter(e => e.urgency === 'urgent' || e.urgency === 'emergent').length / filteredTotalEncounters) * 100).toFixed(1)
+    : 0;
+  const filteredReferralRate = filteredTotalEncounters > 0
+    ? ((filteredEncounters.filter(e => e.specialist_needed).length / filteredTotalEncounters) * 100).toFixed(1)
+    : 0;
+  
+  const filteredUrgencyCounts = {
+    routine: filteredEncounters.filter(e => e.urgency === 'routine').length,
+    urgent: filteredEncounters.filter(e => e.urgency === 'urgent').length,
+    emergent: filteredEncounters.filter(e => e.urgency === 'emergent').length,
+  };
+
+  const filteredTopSpecialists = filteredEncounters.reduce((acc: any, enc) => {
+    if (enc.recommended_specialist) {
+      acc[enc.recommended_specialist] = (acc[enc.recommended_specialist] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  const filteredSortedSpecialists = Object.entries(filteredTopSpecialists)
     .sort(([, a]: any, [, b]: any) => b - a)
     .slice(0, 5);
 
@@ -140,9 +184,9 @@ export default function ClinicalInsightsPage() {
 
         {/* Intelligence Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          <StatCard label="Total Encounters" value={totalEncounters} trend="+12.5%" trendType="up" icon={Activity} color="text-primary-500" />
-          <StatCard label="Critical Urgency Rate" value={`${urgentRate}%`} trend="-2.4%" trendType="down" icon={AlertTriangle} color="text-red-500" />
-          <StatCard label="Specialist Referrals" value={`${referralRate}%`} trend="+0.8%" trendType="up" icon={Stethoscope} color="text-purple-500" />
+          <StatCard label="Total Encounters" value={filteredTotalEncounters} trend="+12.5%" trendType="up" icon={Activity} color="text-primary-500" />
+          <StatCard label="Critical Urgency Rate" value={`${filteredUrgentRate}%`} trend="-2.4%" trendType="down" icon={AlertTriangle} color="text-red-500" />
+          <StatCard label="Specialist Referrals" value={`${filteredReferralRate}%`} trend="+0.8%" trendType="up" icon={Stethoscope} color="text-purple-500" />
           <StatCard label="Avg. Consultation Time" value="14.2m" trend="-1.5m" trendType="down" icon={Clock} color="text-amber-500" />
         </div>
 
@@ -161,9 +205,9 @@ export default function ClinicalInsightsPage() {
               </div>
 
               <div className="space-y-10">
-                <UrgencyBar label="Routine" count={urgencyCounts.routine} total={totalEncounters} color="bg-sage-400" />
-                <UrgencyBar label="Urgent" count={urgencyCounts.urgent} total={totalEncounters} color="bg-amber-400" />
-                <UrgencyBar label="Emergent" count={urgencyCounts.emergent} total={totalEncounters} color="bg-red-400" />
+                <UrgencyBar label="Routine" count={filteredUrgencyCounts.routine} total={filteredTotalEncounters} color="bg-sage-400" />
+                <UrgencyBar label="Urgent" count={filteredUrgencyCounts.urgent} total={filteredTotalEncounters} color="bg-amber-400" />
+                <UrgencyBar label="Emergent" count={filteredUrgencyCounts.emergent} total={filteredTotalEncounters} color="bg-red-400" />
               </div>
 
               <div className="mt-16 pt-10 border-t border-surface-50">
@@ -189,8 +233,8 @@ export default function ClinicalInsightsPage() {
               </div>
 
               <div className="space-y-6">
-                {sortedSpecialists.length > 0 ? (
-                  sortedSpecialists.map(([name, count]: any, i) => (
+                {filteredSortedSpecialists.length > 0 ? (
+                  filteredSortedSpecialists.map(([name, count]: any, i) => (
                     <div key={i} className="flex items-center justify-between p-4 bg-surface-50 rounded-2xl border border-surface-100 hover:border-primary-200 transition-all group">
                       <div className="flex items-center gap-4">
                         <div className="w-8 h-8 rounded-xl bg-white border border-surface-200 flex items-center justify-center text-xs font-black text-primary-500 group-hover:bg-primary-500 group-hover:text-white transition-all shadow-sm">
@@ -205,8 +249,9 @@ export default function ClinicalInsightsPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="py-20 text-center opacity-30">
-                    <p className="text-sm font-medium italic">No referral data available</p>
+                  <div className="py-20 text-center">
+                    <Stethoscope className="w-12 h-12 text-ink-200 mx-auto mb-3 opacity-50" />
+                    <p className="text-sm font-medium text-ink-400">No referral data available for selected period</p>
                   </div>
                 )}
               </div>

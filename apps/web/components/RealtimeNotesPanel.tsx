@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Sparkles, Activity, Brain, HelpCircle, AlertTriangle, CheckCircle2, Target } from "lucide-react";
+import { FileText, Sparkles, Activity, Brain, HelpCircle, AlertTriangle, CheckCircle2, Target, RefreshCw } from "lucide-react";
 
 interface RecommendedQuestion {
   question: string;
@@ -28,9 +28,21 @@ export interface RealtimeNotesPanelProps {
   className?: string;
   clinicalFocus?: ClinicalFocus | null;
   encounterId?: string;
+  liveQuestions?: any[];
+  templateQuestions?: any[];
+  onGenerateQuestions?: () => Promise<void>;
+  isGeneratingQuestions?: boolean;
 }
 
-export function RealtimeNotesPanel({ className, clinicalFocus, encounterId }: RealtimeNotesPanelProps) {
+export function RealtimeNotesPanel({ 
+  className, 
+  clinicalFocus, 
+  encounterId, 
+  liveQuestions = [],
+  templateQuestions = [],
+  onGenerateQuestions,
+  isGeneratingQuestions = false
+}: RealtimeNotesPanelProps) {
   const [notes, setNotes] = useState<string>("");
   const [recentTranscription, setRecentTranscription] = useState<string>("");
   const [askedQuestions, setAskedQuestions] = useState<Set<string>>(new Set());
@@ -53,8 +65,26 @@ export function RealtimeNotesPanel({ className, clinicalFocus, encounterId }: Re
 
   const noteWordCount = notes.trim().split(/\s+/).filter(Boolean).length;
   
-  const criticalQuestions = clinicalFocus?.recommended_questions?.filter(q => q.priority === "critical") || [];
-  const importantQuestions = clinicalFocus?.recommended_questions?.filter(q => q.priority === "important") || [];
+  // Debug: Log when liveQuestions changes
+  useEffect(() => {
+    console.log(`[REALTIME PANEL] liveQuestions updated:`, liveQuestions?.length || 0, 'questions');
+  }, [liveQuestions]);
+
+  // Merge all question sources: template questions, live questions, and clinical focus questions
+  const allQuestions = [
+    ...(templateQuestions || []),
+    ...(liveQuestions || []),
+    ...(clinicalFocus?.recommended_questions || []),
+  ];
+  
+  // Remove duplicates based on question text
+  const uniqueQuestions = Array.from(
+    new Map(allQuestions.map(q => [q.question || q.text || "", q])).values()
+  );
+  
+  const criticalQuestions = uniqueQuestions.filter(q => (q.priority === "critical" || q.priority === "high"));
+  const importantQuestions = uniqueQuestions.filter(q => (q.priority === "important" || q.priority === "medium"));
+  const helpfulQuestions = uniqueQuestions.filter(q => (q.priority === "helpful" || q.priority === "low"));
   const topConditions = clinicalFocus?.possible_conditions?.slice(0, 3) || [];
   const redFlags = clinicalFocus?.red_flags || [];
 
@@ -74,9 +104,22 @@ export function RealtimeNotesPanel({ className, clinicalFocus, encounterId }: Re
     <div className={`flex flex-col h-full bg-surface-50/50 ${className || ""}`}>
       {/* Live Context Section */}
       <div className="p-4 border-b border-surface-100">
-        <div className="flex items-center gap-2 mb-3">
-          <Activity className="w-4 h-4 text-primary-500" />
-          <span className="text-2xs font-bold uppercase tracking-widest text-ink-400">Live Context</span>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-primary-500" />
+            <span className="text-2xs font-bold uppercase tracking-widest text-ink-400">Live Context</span>
+          </div>
+          {onGenerateQuestions && (
+            <button
+              onClick={onGenerateQuestions}
+              disabled={isGeneratingQuestions}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-500 text-white text-[10px] font-bold uppercase tracking-wider hover:bg-primary-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Generate questions based on current conversation"
+            >
+              <RefreshCw className={`w-3 h-3 ${isGeneratingQuestions ? 'animate-spin' : ''}`} />
+              {isGeneratingQuestions ? 'Generating...' : 'Generate Questions'}
+            </button>
+          )}
         </div>
         
         <div className="min-h-[60px] p-3 rounded-xl bg-white border border-surface-200 shadow-inner-soft">
@@ -149,7 +192,7 @@ export function RealtimeNotesPanel({ className, clinicalFocus, encounterId }: Re
         {/* Recommended Questions Section */}
         {activeSection === "questions" && (
           <div className="space-y-3">
-            {criticalQuestions.length === 0 && importantQuestions.length === 0 ? (
+            {criticalQuestions.length === 0 && importantQuestions.length === 0 && helpfulQuestions.length === 0 ? (
               <div className="flex flex-col items-center py-8 opacity-50">
                 <HelpCircle className="w-8 h-8 mb-2 text-ink-300" />
                 <p className="text-xs text-ink-400 text-center">Questions will appear as the conversation progresses</p>
@@ -159,58 +202,96 @@ export function RealtimeNotesPanel({ className, clinicalFocus, encounterId }: Re
                 {criticalQuestions.length > 0 && (
                   <div>
                     <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider mb-2">Critical to Ask</p>
-                    {criticalQuestions.map((q, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleQuestionClick(q.question)}
-                        className={`w-full text-left p-3 rounded-xl mb-2 transition-all ${
-                          askedQuestions.has(q.question)
-                            ? "bg-emerald-50 border border-emerald-200"
-                            : "bg-white border border-red-100 hover:border-red-200"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {askedQuestions.has(q.question) ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                          ) : (
-                            <div className="w-4 h-4 rounded-full border-2 border-red-300 flex-shrink-0 mt-0.5" />
-                          )}
-                          <div>
-                            <p className={`text-xs font-medium ${askedQuestions.has(q.question) ? "text-emerald-700 line-through" : "text-ink-800"}`}>
-                              {q.question}
-                            </p>
-                            <p className="text-[10px] text-ink-400 mt-1">{q.purpose}</p>
+                    {criticalQuestions.map((q, idx) => {
+                      const questionText = q.question || q.text || "";
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleQuestionClick(questionText)}
+                          className={`w-full text-left p-3 rounded-xl mb-2 transition-all ${
+                            askedQuestions.has(questionText)
+                              ? "bg-emerald-50 border border-emerald-200"
+                              : "bg-white border border-red-100 hover:border-red-200"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {askedQuestions.has(questionText) ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full border-2 border-red-300 flex-shrink-0 mt-0.5" />
+                            )}
+                            <div>
+                              <p className={`text-xs font-medium ${askedQuestions.has(questionText) ? "text-emerald-700 line-through" : "text-ink-800"}`}>
+                                {questionText}
+                              </p>
+                              {(q.purpose || q.context) && (
+                                <p className="text-[10px] text-ink-400 mt-1">{q.purpose || q.context}</p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 {importantQuestions.length > 0 && (
                   <div>
                     <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider mb-2">Important</p>
-                    {importantQuestions.slice(0, 4).map((q, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleQuestionClick(q.question)}
-                        className={`w-full text-left p-2.5 rounded-xl mb-1.5 transition-all ${
-                          askedQuestions.has(q.question)
-                            ? "bg-emerald-50 border border-emerald-200"
-                            : "bg-white border border-surface-200 hover:border-amber-200"
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {askedQuestions.has(q.question) ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                          ) : (
-                            <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-300 flex-shrink-0 mt-0.5" />
-                          )}
-                          <p className={`text-[11px] font-medium ${askedQuestions.has(q.question) ? "text-emerald-700 line-through" : "text-ink-700"}`}>
-                            {q.question}
-                          </p>
-                        </div>
-                      </button>
-                    ))}
+                    {importantQuestions.slice(0, 4).map((q, idx) => {
+                      const questionText = q.question || q.text || "";
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleQuestionClick(questionText)}
+                          className={`w-full text-left p-2.5 rounded-xl mb-1.5 transition-all ${
+                            askedQuestions.has(questionText)
+                              ? "bg-emerald-50 border border-emerald-200"
+                              : "bg-white border border-surface-200 hover:border-amber-200"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {askedQuestions.has(questionText) ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-300 flex-shrink-0 mt-0.5" />
+                            )}
+                            <p className={`text-[11px] font-medium ${askedQuestions.has(questionText) ? "text-emerald-700 line-through" : "text-ink-700"}`}>
+                              {questionText}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {helpfulQuestions.length > 0 && importantQuestions.length === 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-2">Helpful</p>
+                    {helpfulQuestions.slice(0, 3).map((q, idx) => {
+                      const questionText = q.question || q.text || "";
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleQuestionClick(questionText)}
+                          className={`w-full text-left p-2.5 rounded-xl mb-1.5 transition-all ${
+                            askedQuestions.has(questionText)
+                              ? "bg-emerald-50 border border-emerald-200"
+                              : "bg-white border border-surface-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {askedQuestions.has(questionText) ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                            ) : (
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 flex-shrink-0 mt-0.5" />
+                            )}
+                            <p className={`text-[11px] font-medium ${askedQuestions.has(questionText) ? "text-emerald-700 line-through" : "text-ink-600"}`}>
+                              {questionText}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </>

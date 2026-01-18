@@ -25,7 +25,6 @@ import {
   Sparkles,
   ArrowUpRight,
   FileText,
-  Brain,
 } from "lucide-react";
 import type { Encounter, Patient } from "@/lib/types";
 
@@ -112,7 +111,6 @@ export default function DashboardPage() {
               <Link href="/dashboard" className="text-sm font-bold text-ink-900 border-b-2 border-primary-500 pb-1">Dashboard</Link>
               <Link href="/patients" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Patient Registry</Link>
               <Link href="/templates" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Templates</Link>
-              <Link href="/doctor" className="text-sm font-bold text-ink-400 hover:text-ink-600 transition-colors pb-1">Doctor Portal</Link>
             </div>
           </div>
 
@@ -156,13 +154,6 @@ export default function DashboardPage() {
             >
               <FileText className="w-4 h-4" />
               <span>Templates</span>
-            </Link>
-            <Link
-              href="/doctor"
-              className="flex items-center gap-2 px-5 py-3 bg-purple-50 text-purple-700 rounded-2xl font-bold border border-purple-200 hover:bg-purple-100 transition-all"
-            >
-              <Brain className="w-4 h-4" />
-              <span>Doctor Portal</span>
             </Link>
             <Link
               href="/new-encounter"

@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import logo from "@/logo.png";
+import { kgToLbs, cmToFeetInches, formatHeight, formatWeight } from "@/lib/utils";
 import {
   Search,
   Plus,
@@ -229,7 +230,13 @@ export default function PatientRegistryPage() {
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Height / Weight</label>
-                      <p className="text-sm font-bold text-ink-800 flex items-center gap-2"><Activity className="w-3.5 h-3.5 text-blue-400" /> {selectedPatient.height_cm ? `${selectedPatient.height_cm}cm` : "--"} / {selectedPatient.weight_kg ? `${selectedPatient.weight_kg}kg` : "--"}</p>
+                      <p className="text-sm font-bold text-ink-800 flex items-center gap-2">
+                        <Activity className="w-3.5 h-3.5 text-blue-400" /> 
+                        {selectedPatient.height_cm ? (() => {
+                          const { feet, inches } = cmToFeetInches(selectedPatient.height_cm!);
+                          return formatHeight(feet, inches);
+                        })() : "--"} / {selectedPatient.weight_kg ? formatWeight(kgToLbs(selectedPatient.weight_kg)) : "--"}
+                      </p>
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Provider</label>

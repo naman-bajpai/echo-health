@@ -609,7 +609,7 @@ function escapePdfText(text: string): string {
 /**
  * Create a multi-page PDF with all content
  */
-function createMultiPagePdf(content: string): Uint8Array {
+export function createMultiPagePdf(content: string): Uint8Array {
   if (!content || content.trim().length === 0) {
     content = "No content available for this encounter.";
   }

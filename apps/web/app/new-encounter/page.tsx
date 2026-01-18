@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { startEncounter, uploadEhrTemplate, generateQuestions, getUserTemplates } from "@/lib/api";
 import TemplateUpload from "@/components/TemplateUpload";
 import logo from "@/logo.png";
+import { validateEmail, validatePhone } from "@/lib/utils";
 import {
   ArrowLeft,
   User,
@@ -85,16 +86,20 @@ export default function NewEncounterPage() {
     if (!newPatient.full_name.trim()) errors.full_name = "Full name is required";
     if (!newPatient.dob) errors.dob = "Birth date is required";
     
-    // Basic phone validation
-    const phoneRegex = /^\+?[\d\s-()]{7,}$/;
-    if (newPatient.phone && !phoneRegex.test(newPatient.phone)) {
-      errors.phone = "Invalid phone format";
+    // Validate email if provided
+    if (newPatient.email) {
+      const emailValidation = validateEmail(newPatient.email);
+      if (!emailValidation.valid) {
+        errors.email = emailValidation.error || "Invalid email format";
+      }
     }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (newPatient.email && !emailRegex.test(newPatient.email)) {
-      errors.email = "Invalid email format";
+    // Validate phone if provided
+    if (newPatient.phone) {
+      const phoneValidation = validatePhone(newPatient.phone);
+      if (!phoneValidation.valid) {
+        errors.phone = phoneValidation.error || "Invalid phone format";
+      }
     }
 
     setFieldErrors(errors);
@@ -340,6 +345,7 @@ export default function NewEncounterPage() {
                   <input
                     type="date"
                     value={newPatient.dob}
+                    max={new Date().toISOString().split('T')[0]}
                     onChange={(e) => {
                       setNewPatient({ ...newPatient, dob: e.target.value });
                       if (fieldErrors.dob) setFieldErrors({ ...fieldErrors, dob: "" });
@@ -362,6 +368,21 @@ export default function NewEncounterPage() {
                   />
                   {fieldErrors.phone && <p className="text-2xs font-bold text-red-500 ml-1 uppercase tracking-wider">{fieldErrors.phone}</p>}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-ink-400 uppercase tracking-widest ml-1">Email Address (Optional)</label>
+                <input
+                  type="email"
+                  value={newPatient.email}
+                  onChange={(e) => {
+                    setNewPatient({ ...newPatient, email: e.target.value });
+                    if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: "" });
+                  }}
+                  className={`w-full h-14 px-5 bg-surface-50 border ${fieldErrors.email ? "border-red-500 ring-2 ring-red-50" : "border-surface-200"} rounded-2xl font-bold focus:ring-4 ring-primary-50 outline-none focus:border-primary-200 transition-all`}
+                  placeholder="patient@example.com"
+                />
+                {fieldErrors.email && <p className="text-2xs font-bold text-red-500 ml-1 uppercase tracking-wider">{fieldErrors.email}</p>}
               </div>
 
               <button

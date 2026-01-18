@@ -28,13 +28,25 @@ serve(async (req: Request) => {
     const body: StartEncounterRequest = await req.json();
     const { patient_name, reason_for_visit, patient_id, participant_identity, template_id, created_by } = body;
 
-    // Get visit number if patient_id provided
+    // Validate UUID format - demo patient IDs like "demo-xxx" are not valid UUIDs
+    const isValidUUID = (id: string): boolean => {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      return uuidRegex.test(id);
+    };
+
+    // Only use patient_id if it's a valid UUID (skip demo IDs)
+    const validPatientId = patient_id && isValidUUID(patient_id) ? patient_id : null;
+    
+    // Only use created_by if it's a valid UUID (skip demo user IDs)
+    const validCreatedBy = created_by && isValidUUID(created_by) ? created_by : null;
+
+    // Get visit number if valid patient_id provided
     let visitNumber = 1;
-    if (patient_id) {
+    if (validPatientId) {
       const { count } = await supabaseAdmin
         .from("encounters")
         .select("*", { count: "exact", head: true })
-        .eq("patient_id", patient_id);
+        .eq("patient_id", validPatientId);
       visitNumber = (count || 0) + 1;
     }
 
@@ -48,16 +60,18 @@ serve(async (req: Request) => {
       status: "intake",
     };
 
-    if (patient_id) {
-      insertData.patient_id = patient_id;
+    // Only set patient_id if it's a valid UUID
+    if (validPatientId) {
+      insertData.patient_id = validPatientId;
     }
 
     if (template_id) {
       insertData.template_id = template_id;
     }
 
-    if (created_by) {
-      insertData.created_by = created_by;
+    // Only set created_by if it's a valid UUID
+    if (validCreatedBy) {
+      insertData.created_by = validCreatedBy;
     }
 
     const { data: encounter, error } = await supabaseAdmin

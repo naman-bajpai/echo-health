@@ -7,6 +7,8 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import logo from "@/logo.png";
+import { useToast } from "@/components/ToastProvider";
+import { validateEmail, validatePhone, kgToLbs, lbsToKg, cmToFeetInches, feetInchesToCm, formatHeight, formatWeight } from "@/lib/utils";
 import {
   ArrowLeft,
   User,
@@ -45,8 +47,13 @@ export default function PatientProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const { showError, showSuccess } = useToast();
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [editPatient, setEditPatient] = useState<Partial<Patient>>({});
+  // Local state for weight (lbs) and height (feet/inches) for UI
+  const [weightLbs, setWeightLbs] = useState<number | null>(null);
+  const [heightFeet, setHeightFeet] = useState<number>(0);
+  const [heightInches, setHeightInches] = useState<number>(0);
 
   useEffect(() => {
     if (!authLoading && !user) router.push("/");
@@ -68,6 +75,16 @@ export default function PatientProfilePage() {
       if (patientData) {
         setPatient(patientData);
         setEditPatient(patientData);
+        // Convert weight from kg to lbs for display
+        if (patientData.weight_kg) {
+          setWeightLbs(Math.round(kgToLbs(patientData.weight_kg)));
+        }
+        // Convert height from cm to feet/inches for display
+        if (patientData.height_cm) {
+          const { feet, inches } = cmToFeetInches(patientData.height_cm);
+          setHeightFeet(feet);
+          setHeightInches(inches);
+        }
       }
 
       // Load encounters
@@ -90,16 +107,20 @@ export default function PatientProfilePage() {
     if (!editPatient.full_name?.trim()) errors.full_name = "Name is required";
     if (!editPatient.dob) errors.dob = "Birth date is required";
     
-    // Phone validation
-    const phoneRegex = /^\+?[\d\s-()]{7,}$/;
-    if (editPatient.phone && !phoneRegex.test(editPatient.phone)) {
-      errors.phone = "Invalid phone format";
+    // Validate email if provided
+    if (editPatient.email) {
+      const emailValidation = validateEmail(editPatient.email);
+      if (!emailValidation.valid) {
+        errors.email = emailValidation.error || "Invalid email format";
+      }
     }
 
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (editPatient.email && !emailRegex.test(editPatient.email)) {
-      errors.email = "Invalid email format";
+    // Validate phone if provided
+    if (editPatient.phone) {
+      const phoneValidation = validatePhone(editPatient.phone);
+      if (!phoneValidation.valid) {
+        errors.phone = phoneValidation.error || "Invalid phone format";
+      }
     }
 
     setFieldErrors(errors);
@@ -118,18 +139,38 @@ export default function PatientProfilePage() {
     if (!validate()) return;
     setIsLoading(true);
     try {
+      // Convert weight from lbs to kg before saving
+      const updateData = { ...editPatient };
+      if (weightLbs !== null && weightLbs > 0) {
+        updateData.weight_kg = Math.round(lbsToKg(weightLbs) * 10) / 10; // Round to 1 decimal
+      } else if (weightLbs === null || weightLbs === 0) {
+        updateData.weight_kg = undefined;
+      }
+
+      // Convert height from feet/inches to cm before saving
+      if (heightFeet > 0 || heightInches > 0) {
+        updateData.height_cm = Math.round(feetInchesToCm(heightFeet, heightInches));
+      } else {
+        updateData.height_cm = undefined;
+      }
+
       const { error } = await supabase
         .from("patients")
-        .update(editPatient)
+        .update(updateData)
         .eq("id", patientId);
       
       if (error) throw error;
       
-      setPatient(editPatient as Patient);
+      // Update local state with converted values
+      const updatedPatient = { ...editPatient, ...updateData };
+      setPatient(updatedPatient as Patient);
+      setEditPatient(updatedPatient);
       setIsEditing(false);
       setHasChanges(false);
+      showSuccess("Patient profile updated successfully");
     } catch (e: any) {
-      alert(`Error updating patient: ${e.message}`);
+      console.error("Error updating patient:", e);
+      showError(`Failed to update patient: ${e.message || "Please try again"}`);
     } finally {
       setIsLoading(false);
     }
@@ -231,6 +272,7 @@ export default function PatientProfilePage() {
                           <input
                             type="date"
                             value={editPatient.dob}
+                            max={new Date().toISOString().split('T')[0]}
                             onChange={(e) => handleFieldChange("dob", e.target.value)}
                             className={`text-sm font-medium text-ink-700 bg-surface-50 border ${fieldErrors.dob ? "border-red-500" : "border-surface-200"} rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 ring-primary-100`}
                           />
@@ -300,22 +342,51 @@ export default function PatientProfilePage() {
                 {isEditing ? (
                   <>
                     <div className="flex flex-col gap-1 p-4 bg-white rounded-2xl border border-surface-100 shadow-sm">
-                      <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Weight (kg)</label>
+                      <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Weight (lbs)</label>
                       <input 
                         type="number" 
-                        value={editPatient.weight_kg || ""} 
-                        onChange={(e) => handleFieldChange("weight_kg", parseFloat(e.target.value))}
+                        min="0"
+                        step="0.1"
+                        value={weightLbs !== null ? weightLbs : ""} 
+                        onChange={(e) => {
+                          const value = e.target.value === "" ? null : parseFloat(e.target.value);
+                          setWeightLbs(value);
+                          setHasChanges(true);
+                        }}
                         className="text-sm font-bold text-ink-900 bg-surface-50 border border-surface-200 rounded-lg px-2 py-1 focus:outline-none"
+                        placeholder="0"
                       />
                     </div>
                     <div className="flex flex-col gap-1 p-4 bg-white rounded-2xl border border-surface-100 shadow-sm">
-                      <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Height (cm)</label>
-                      <input 
-                        type="number" 
-                        value={editPatient.height_cm || ""} 
-                        onChange={(e) => handleFieldChange("height_cm", parseFloat(e.target.value))}
-                        className="text-sm font-bold text-ink-900 bg-surface-50 border border-surface-200 rounded-lg px-2 py-1 focus:outline-none"
-                      />
+                      <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Height (ft'in")</label>
+                      <div className="flex items-center gap-1">
+                        <input 
+                          type="number" 
+                          min="0"
+                          max="8"
+                          value={heightFeet || ""} 
+                          onChange={(e) => {
+                            setHeightFeet(parseInt(e.target.value) || 0);
+                            setHasChanges(true);
+                          }}
+                          className="flex-1 text-sm font-bold text-ink-900 bg-surface-50 border border-surface-200 rounded-lg px-2 py-1 focus:outline-none"
+                          placeholder="0"
+                        />
+                        <span className="text-xs font-bold text-ink-400">'</span>
+                        <input 
+                          type="number" 
+                          min="0"
+                          max="11"
+                          value={heightInches || ""} 
+                          onChange={(e) => {
+                            setHeightInches(parseInt(e.target.value) || 0);
+                            setHasChanges(true);
+                          }}
+                          className="flex-1 text-sm font-bold text-ink-900 bg-surface-50 border border-surface-200 rounded-lg px-2 py-1 focus:outline-none"
+                          placeholder="0"
+                        />
+                        <span className="text-xs font-bold text-ink-400">"</span>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1 p-4 bg-white rounded-2xl border border-surface-100 shadow-sm">
                       <label className="text-[10px] font-black text-ink-300 uppercase tracking-widest">Blood Type</label>
@@ -342,8 +413,21 @@ export default function PatientProfilePage() {
                   </>
                 ) : (
                   <>
-                    <VitalBadge icon={Weight} label="Weight" value={patient.weight_kg ? `${patient.weight_kg} kg` : "--"} color="text-amber-500" />
-                    <VitalBadge icon={Ruler} label="Height" value={patient.height_cm ? `${patient.height_cm} cm` : "--"} color="text-blue-500" />
+                    <VitalBadge 
+                      icon={Weight} 
+                      label="Weight" 
+                      value={patient.weight_kg ? formatWeight(kgToLbs(patient.weight_kg)) : "--"} 
+                      color="text-amber-500" 
+                    />
+                    <VitalBadge 
+                      icon={Ruler} 
+                      label="Height" 
+                      value={patient.height_cm ? (() => {
+                        const { feet, inches } = cmToFeetInches(patient.height_cm);
+                        return formatHeight(feet, inches);
+                      })() : "--"} 
+                      color="text-blue-500" 
+                    />
                     <VitalBadge icon={Droplets} label="Blood Type" value={patient.blood_type || "--"} color="text-red-500" />
                     <VitalBadge icon={ShieldAlert} label="Allergies" value={patient.allergies?.length ? `${patient.allergies.length} active` : "None"} color="text-purple-500" />
                   </>

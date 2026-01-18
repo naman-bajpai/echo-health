@@ -12,6 +12,7 @@ import {
   HelpCircle,
   LogOut,
   Brain,
+  CreditCard,
 } from "lucide-react";
 import type { PanelMode } from "@/lib/types";
 import { useState } from "react";
@@ -20,6 +21,7 @@ import Link from "next/link";
 interface SidebarProps {
   currentMode: PanelMode;
   onModeChange: (mode: PanelMode) => void;
+  encounterId?: string;
 }
 
 const modes: Array<{
@@ -36,7 +38,7 @@ const modes: Array<{
   { id: "summary", label: "Visit Summary", icon: FileCheck, color: "text-rose-500" },
 ];
 
-export default function Sidebar({ currentMode, onModeChange }: SidebarProps) {
+export default function Sidebar({ currentMode, onModeChange, encounterId }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   return (
@@ -108,6 +110,20 @@ export default function Sidebar({ currentMode, onModeChange }: SidebarProps) {
 
       {/* Footer Actions */}
       <div className="p-4 border-t border-surface-100 flex flex-col gap-2">
+        {encounterId && (
+          <Link
+            href={`/encounter/${encounterId}/checkout`}
+            className="group relative flex items-center gap-4 p-3 rounded-2xl text-ink-400 hover:bg-primary-50 hover:text-primary-600 transition-all duration-200"
+          >
+            <CreditCard className="w-5 h-5" />
+            {!isCollapsed && <span className="font-semibold text-sm">Checkout</span>}
+            {isCollapsed && (
+              <div className="absolute left-full ml-4 px-3 py-1.5 bg-primary-600 text-white text-xs font-bold rounded-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 whitespace-nowrap shadow-xl">
+                Checkout
+              </div>
+            )}
+          </Link>
+        )}
         <Link
           href="/dashboard"
           className="group relative flex items-center gap-4 p-3 rounded-2xl text-ink-400 hover:bg-red-50 hover:text-red-600 transition-all duration-200"

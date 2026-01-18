@@ -62,6 +62,11 @@ DROP POLICY IF EXISTS "Service role full access to profiles" ON profiles;
 CREATE POLICY "Service role full access to profiles" ON profiles
   FOR ALL USING (auth.role() = 'service_role');
 
+-- Allow authenticated users to view doctors (for assignment purposes)
+DROP POLICY IF EXISTS "Authenticated users can view doctors" ON profiles;
+CREATE POLICY "Authenticated users can view doctors" ON profiles
+  FOR SELECT TO authenticated USING (role = 'doctor');
+
 -- Patients policies (all authenticated users can access)
 DROP POLICY IF EXISTS "Authenticated users can view patients" ON patients;
 CREATE POLICY "Authenticated users can view patients" ON patients

@@ -13,7 +13,7 @@ export type SpeakerRole = "patient" | "clinician" | "staff";
 /**
  * Artifact types
  */
-export type ArtifactType = "fields" | "draft_note" | "referral" | "summary" | "billing_codes" | "diagnosis" | "clinical_focus";
+export type ArtifactType = "fields" | "draft_note" | "referral" | "summary" | "billing_codes" | "diagnosis" | "clinical_focus" | "referral_pdf" | "live_questions";
 
 /**
  * Database: Encounter row

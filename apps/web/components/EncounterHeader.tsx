@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
 import {
   Clock,
@@ -9,12 +10,14 @@ import {
   Badge,
   Sparkles,
   ShieldAlert,
+  ChevronDown,
 } from "lucide-react";
-import type { Encounter } from "@/lib/types";
+import type { Encounter, UrgencyLevel } from "@/lib/types";
 import logo from "@/logo.png";
 
 interface EncounterHeaderProps {
   encounter: Encounter;
+  onUrgencyChange?: (urgency: UrgencyLevel) => Promise<void>;
 }
 
 const urgencyConfig = {
@@ -44,9 +47,45 @@ const urgencyConfig = {
   },
 };
 
-export default function EncounterHeader({ encounter }: EncounterHeaderProps) {
+export default function EncounterHeader({ encounter, onUrgencyChange }: EncounterHeaderProps) {
   const urgency = urgencyConfig[encounter.urgency] || urgencyConfig.routine;
   const UrgencyIcon = urgency.icon;
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [isDropdownOpen]);
+
+  const handleUrgencySelect = async (newUrgency: UrgencyLevel) => {
+    if (newUrgency === encounter.urgency || !onUrgencyChange) {
+      setIsDropdownOpen(false);
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      await onUrgencyChange(newUrgency);
+      setIsDropdownOpen(false);
+    } catch (error) {
+      console.error("Failed to update urgency:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const urgencyOptions: UrgencyLevel[] = ["routine", "urgent", "emergent"];
 
   return (
     <header className="bg-white/80 backdrop-blur-md border-b border-surface-200 h-20 flex items-center shrink-0 px-8 z-40">
@@ -85,12 +124,54 @@ export default function EncounterHeader({ encounter }: EncounterHeaderProps) {
         <div className="flex items-center gap-4">
           {/* Status Indicators */}
           <div className="flex items-center gap-2 pr-4 border-r border-surface-200">
-            {/* Urgency Badge */}
-            <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${urgency.bg} ${urgency.text} ${urgency.border} transition-all duration-300 hover:shadow-soft`}
-            >
-              <div className={`w-1.5 h-1.5 rounded-full ${urgency.dot}`} />
-              <span className="text-xs font-bold uppercase tracking-wider">{urgency.label}</span>
+            {/* Urgency Badge with Dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => onUrgencyChange && setIsDropdownOpen(!isDropdownOpen)}
+                disabled={!onUrgencyChange || isUpdating}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${urgency.bg} ${urgency.text} ${urgency.border} transition-all duration-300 hover:shadow-soft ${
+                  onUrgencyChange ? "cursor-pointer" : "cursor-default"
+                } ${isUpdating ? "opacity-50" : ""}`}
+              >
+                <div className={`w-1.5 h-1.5 rounded-full ${urgency.dot}`} />
+                <span className="text-xs font-bold uppercase tracking-wider">{urgency.label}</span>
+                {onUrgencyChange && (
+                  <ChevronDown className={`w-3 h-3 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
+                )}
+              </button>
+
+              {isDropdownOpen && onUrgencyChange && (
+                <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-2xl shadow-soft-xl border border-surface-200 py-2 z-50 animate-slide-up">
+                  <div className="px-3 py-2 mb-1 border-b border-surface-100">
+                    <p className="text-2xs font-bold text-ink-400 uppercase tracking-widest">Change Urgency</p>
+                  </div>
+                  {urgencyOptions.map((option) => {
+                    const optionConfig = urgencyConfig[option];
+                    const OptionIcon = optionConfig.icon;
+                    const isSelected = option === encounter.urgency;
+                    
+                    return (
+                      <button
+                        key={option}
+                        onClick={() => handleUrgencySelect(option)}
+                        disabled={isUpdating}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-50 transition-colors text-left ${
+                          isSelected ? "bg-primary-50" : ""
+                        } ${isUpdating ? "opacity-50 cursor-not-allowed" : ""}`}
+                      >
+                        <div className={`w-2 h-2 rounded-full ${optionConfig.dot}`} />
+                        <OptionIcon className={`w-4 h-4 ${optionConfig.text}`} />
+                        <span className={`text-xs font-bold uppercase tracking-wider ${optionConfig.text}`}>
+                          {optionConfig.label}
+                        </span>
+                        {isSelected && (
+                          <CheckCircle className="w-4 h-4 text-primary-600 ml-auto" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Specialist Needed */}

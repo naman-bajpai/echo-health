@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabaseClient";
 import logo from "@/logo.png";
+import { useToast } from "@/components/ToastProvider";
 import {
   Plus,
   FileText,
@@ -46,6 +47,7 @@ export default function TemplatesPage() {
   
   // Upload form state
   const [templateName, setTemplateName] = useState("");
+  const { showError, showSuccess } = useToast();
   const [templateContent, setTemplateContent] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -69,9 +71,12 @@ export default function TemplatesPage() {
 
         if (!error && data) {
           setTemplates(data);
+        } else if (error) {
+          showError("Failed to load templates. Please try again.");
         }
       } catch (err) {
         console.error("Error loading templates:", err);
+        showError("Failed to load templates. Please try again.");
       } finally {
         setIsLoading(false);
       }
@@ -98,6 +103,7 @@ export default function TemplatesPage() {
       }
 
       setUploadSuccess(true);
+      showSuccess("Template uploaded successfully");
       setTimeout(() => {
         setShowUploadModal(false);
         setTemplateName("");
@@ -106,6 +112,7 @@ export default function TemplatesPage() {
       }, 1500);
     } catch (err) {
       console.error("Error uploading template:", err);
+      showError("Failed to upload template. Please try again.");
     } finally {
       setIsUploading(false);
     }
@@ -117,8 +124,10 @@ export default function TemplatesPage() {
     try {
       await supabase.from("ehr_templates").delete().eq("id", id);
       setTemplates(templates.filter(t => t.id !== id));
+      showSuccess("Template deleted successfully");
     } catch (err) {
       console.error("Error deleting template:", err);
+      showError("Failed to delete template. Please try again.");
     }
   };
 

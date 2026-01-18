@@ -9,3 +9,5 @@ export { default as DraftNotePanel } from "./DraftNotePanel";
 export { default as ReferralPanel } from "./ReferralPanel";
 export { default as SummaryPanel } from "./SummaryPanel";
 export { default as ClinicalFocusPanel } from "./ClinicalFocusPanel";
+export { default as ReferralPdfEditor } from "./ReferralPdfEditor";
+export { default as BillingCodesPanel } from "./BillingCodesPanel";

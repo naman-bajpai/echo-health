@@ -123,6 +123,34 @@ export async function getSmartClinicalAnalysis(
 }
 
 /**
+ * Generate referral PDF with suggested content
+ */
+export async function generateReferralPdf(
+  encounterId: string,
+  specialistType?: string,
+  providerId?: string,
+  providerName?: string
+): Promise<{ pdfBase64: string; referralContent: any; artifactId?: string }> {
+  return callFunction("generate-referral-pdf", {
+    encounterId,
+    specialistType,
+    providerId,
+    providerName,
+  });
+}
+
+/**
+ * Generate live questions based on current transcript
+ */
+export async function generateLiveQuestions(
+  encounterId: string
+): Promise<{ questions: any[]; encounterId: string }> {
+  return callFunction("generate-live-questions", {
+    encounterId,
+  });
+}
+
+/**
  * Add a transcript chunk - AI auto-detects speaker
  */
 export async function upsertTranscript(
@@ -436,4 +464,24 @@ export function subscribeToEncounter(
   return () => {
     channel.unsubscribe();
   };
+}
+
+/**
+ * Update encounter urgency level
+ */
+export async function updateEncounterUrgency(
+  encounterId: string,
+  urgency: "routine" | "urgent" | "emergent"
+): Promise<{ success: boolean }> {
+  const { error } = await supabase
+    .from("encounters")
+    .update({ urgency })
+    .eq("id", encounterId);
+
+  if (error) {
+    console.error("Error updating urgency:", error);
+    throw new Error("Failed to update urgency");
+  }
+
+  return { success: true };
 }

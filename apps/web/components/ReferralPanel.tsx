@@ -16,6 +16,7 @@ import {
   Users,
   X,
   ChevronRight,
+  FileDown,
 } from "lucide-react";
 import type { Provider, Referral } from "@/lib/types";
 
@@ -25,6 +26,9 @@ interface ReferralPanelProps {
   onSearch: (specialty: string, location?: string) => Promise<void>;
   onApprove: (provider: Provider, reason: string) => Promise<void>;
   recommendedSpecialist?: string;
+  encounterId?: string;
+  onGenerateReferralPdf?: (specialistType: string) => Promise<void>;
+  isGeneratingPdf?: boolean;
 }
 
 const commonSpecialties = [
@@ -38,6 +42,9 @@ export default function ReferralPanel({
   onSearch,
   onApprove,
   recommendedSpecialist,
+  encounterId,
+  onGenerateReferralPdf,
+  isGeneratingPdf = false,
 }: ReferralPanelProps) {
   const [specialty, setSpecialty] = useState(recommendedSpecialist || "");
   const [location, setLocation] = useState("");
@@ -134,12 +141,33 @@ export default function ReferralPanel({
                 <p className="text-sm text-primary-700/80 mb-6 font-medium leading-relaxed">
                   Based on current assessment, we suggest a consultation with a <strong>{recommendedSpecialist}</strong>.
                 </p>
-                <button 
-                  onClick={() => { setSpecialty(recommendedSpecialist); handleSearch(); }}
-                  className="w-full bg-white text-primary-600 rounded-xl py-3 font-bold text-xs uppercase tracking-widest shadow-soft hover:shadow-md transition-all"
-                >
-                  Auto-Search Now
-                </button>
+                <div className="space-y-3">
+                  <button 
+                    onClick={() => { setSpecialty(recommendedSpecialist); handleSearch(); }}
+                    className="w-full bg-white text-primary-600 rounded-xl py-3 font-bold text-xs uppercase tracking-widest shadow-soft hover:shadow-md transition-all"
+                  >
+                    Auto-Search Now
+                  </button>
+                  {onGenerateReferralPdf && (
+                    <button 
+                      onClick={() => onGenerateReferralPdf(recommendedSpecialist)}
+                      disabled={isGeneratingPdf}
+                      className="w-full bg-primary-500 text-white rounded-xl py-3 font-bold text-xs uppercase tracking-widest shadow-soft hover:bg-primary-600 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isGeneratingPdf ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating PDF...
+                        </>
+                      ) : (
+                        <>
+                          <FileDown className="w-4 h-4" />
+                          Generate Referral PDF
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

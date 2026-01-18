@@ -140,6 +140,34 @@ serve(async (req: Request) => {
           }).catch((e) => {
             console.error("Error auto-generating clinical focus:", e);
           });
+
+          // Auto-generate live questions based on current transcript
+          console.log(`[LIVE QUESTIONS] Auto-generating for encounter ${encounterId} after new transcript input`);
+          fetch(`${supabaseUrl}/functions/v1/generate-live-questions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({ encounterId }),
+          })
+            .then(response => {
+              if (!response.ok) {
+                console.error(`[LIVE QUESTIONS] Failed with status ${response.status}`);
+                return response.text().then(text => {
+                  console.error(`[LIVE QUESTIONS] Error response: ${text}`);
+                });
+              }
+              return response.json();
+            })
+            .then(data => {
+              if (data) {
+                console.log(`[LIVE QUESTIONS] Successfully generated ${data.questions?.length || 0} questions`);
+              }
+            })
+            .catch((e) => {
+              console.error("[LIVE QUESTIONS] Error auto-generating:", e);
+            });
         }
       } catch (e) {
         console.error("Error auto-generating artifacts:", e);

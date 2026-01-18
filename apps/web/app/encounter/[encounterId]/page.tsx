@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import EncounterHeader from "@/components/EncounterHeader";
 import Sidebar from "@/components/Sidebar";
@@ -11,6 +11,7 @@ import ReferralPanel from "@/components/ReferralPanel";
 import SummaryPanel from "@/components/SummaryPanel";
 import ClinicalFocusPanel from "@/components/ClinicalFocusPanel";
 import { RealtimeNotesPanel } from "@/components/RealtimeNotesPanel";
+import ReferralPdfEditor from "@/components/ReferralPdfEditor";
 import {
   getEncounter,
   getTranscript,
@@ -30,8 +31,13 @@ import {
   generateDiagnosis,
   generateAll,
   getSmartClinicalAnalysis,
+  generateReferralPdf,
+  generateLiveQuestions,
+  updateEncounterUrgency,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/auth";
+import { useToast } from "@/components/ToastProvider";
 import type {
   Encounter,
   TranscriptChunk,
@@ -42,6 +48,7 @@ import type {
   PanelMode,
   UrgencyAssessment,
   DiagnosisResult,
+  UrgencyLevel,
 } from "@/lib/types";
 import { 
   Loader2, 
@@ -55,6 +62,8 @@ import {
 export default function EncounterPage() {
   const params = useParams();
   const encounterId = params.encounterId as string;
+  const { user } = useAuth();
+  const { showError, showSuccess } = useToast();
 
   // State
   const [encounter, setEncounter] = useState<Encounter | null>(null);
@@ -76,6 +85,14 @@ export default function EncounterPage() {
   const [urgencyAssessment, setUrgencyAssessment] =
     useState<UrgencyAssessment | null>(null);
   const [isLoadingClinicalFocus, setIsLoadingClinicalFocus] = useState(false);
+  const [referralPdf, setReferralPdf] = useState<{ pdfBase64: string; content: any } | null>(null);
+  const [isGeneratingReferralPdf, setIsGeneratingReferralPdf] = useState(false);
+  const [liveQuestions, setLiveQuestions] = useState<any[]>([]);
+  const [isGeneratingLiveQuestions, setIsGeneratingLiveQuestions] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const questionGenerationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [templateCustomFields, setTemplateCustomFields] = useState<any[]>([]);
+  const [templateQuestions, setTemplateQuestions] = useState<any[]>([]);
 
   const [currentMode, setCurrentMode] = useState<PanelMode>("transcript");
   const [isLoading, setIsLoading] = useState(true);
@@ -115,11 +132,40 @@ export default function EncounterPage() {
         setEncounter(encounterData);
         setTranscript(transcriptData);
 
+        // Load template custom fields if template_id exists
+        if (encounterData.template_id) {
+          const { data: template } = await supabase
+            .from("ehr_templates")
+            .select("custom_fields")
+            .eq("id", encounterData.template_id)
+            .single();
+          
+          if (template?.custom_fields) {
+            setTemplateCustomFields(template.custom_fields);
+          }
+
+          // Load questions generated from this template
+          const { data: templateQuestionsData } = await supabase
+            .from("generated_questions")
+            .select("questions")
+            .eq("template_id", encounterData.template_id)
+            .eq("encounter_id", encounterId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .single();
+          
+          if (templateQuestionsData?.questions) {
+            setTemplateQuestions(templateQuestionsData.questions);
+          }
+        }
+
         // Load artifacts
         const { data: artifacts } = await supabase
           .from("artifacts")
           .select("content, type")
           .eq("encounter_id", encounterId);
+
+        console.log(`[DEBUG] Loaded ${artifacts?.length || 0} artifacts:`, artifacts?.map(a => a.type));
 
         if (artifacts) {
           artifacts.forEach(art => {
@@ -128,6 +174,19 @@ export default function EncounterPage() {
             if (art.type === "diagnosis") setDiagnosis(art.content as DiagnosisResult);
             if (art.type === "billing_codes") setBillingCodes(art.content);
             if (art.type === "clinical_focus") setClinicalFocus(art.content);
+            if (art.type === "referral_pdf") {
+              const pdfData = art.content as any;
+              if (pdfData.pdf_base64) {
+                setReferralPdf({ pdfBase64: pdfData.pdf_base64, content: pdfData });
+              }
+            }
+            if (art.type === "live_questions") {
+              const questionsData = art.content as any;
+              if (questionsData.questions) {
+                console.log(`[LIVE QUESTIONS] Loaded ${questionsData.questions.length} questions from artifacts`);
+                setLiveQuestions(questionsData.questions);
+              }
+            }
           });
         }
       } catch (err) {
@@ -167,6 +226,19 @@ export default function EncounterPage() {
             else if (p.type === "summary") setSummary(p.content as PatientSummary);
             else if (p.type === "billing_codes") setBillingCodes(p.content);
             else if (p.type === "clinical_focus") setClinicalFocus(p.content);
+            else if (p.type === "referral_pdf") {
+              const pdfData = p.content as any;
+              if (pdfData.pdf_base64) {
+                setReferralPdf({ pdfBase64: pdfData.pdf_base64, content: pdfData });
+              }
+            }
+            else if (p.type === "live_questions") {
+              const questionsData = p.content as any;
+              if (questionsData.questions) {
+                console.log(`[LIVE QUESTIONS] Real-time update: ${questionsData.questions.length} questions`);
+                setLiveQuestions(questionsData.questions);
+              }
+            }
           }
         }
       )
@@ -214,9 +286,11 @@ export default function EncounterPage() {
         setAnalysisComplete(true);
         const updated = await getEncounter(encounterId);
         if (updated) setEncounter(updated);
+        showSuccess("Encounter analyzed successfully");
       }
     } catch (err) {
       console.error("Failed to analyze:", err);
+      showError("Failed to analyze encounter. Please try again.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -232,22 +306,57 @@ export default function EncounterPage() {
       if (result.billingCodes) setBillingCodes(result.billingCodes);
       const updated = await getEncounter(encounterId);
       if (updated) setEncounter(updated);
+      showSuccess("All documents generated successfully");
     } catch (err) {
       console.error("Failed to generate all:", err);
+      showError("Failed to generate documents. Please try again.");
     } finally {
       setIsGeneratingAll(false);
     }
   }, [encounterId]);
 
-  const handleAddTranscript = useCallback(async (text: string) => upsertTranscript(encounterId, text), [encounterId]);
+  const handleAddTranscript = useCallback(async (text: string) => {
+    const result = await upsertTranscript(encounterId, text);
+    // Mark as transcribing when new transcript arrives
+    setIsTranscribing(true);
+    // Clear existing timer
+    if (questionGenerationTimerRef.current) {
+      clearTimeout(questionGenerationTimerRef.current);
+    }
+    // Set timer to auto-generate questions after 10 seconds of no new transcript
+    questionGenerationTimerRef.current = setTimeout(() => {
+      setIsTranscribing(false);
+      // Auto-generate questions when transcription stops
+      handleGenerateLiveQuestions();
+    }, 10000); // 10 seconds after last transcript
+    return result;
+  }, [encounterId]);
+
+  // Auto-generate questions while actively transcribing (every 15 seconds)
+  useEffect(() => {
+    if (!isTranscribing) return;
+
+    const interval = setInterval(() => {
+      console.log('[AUTO] Generating questions during active transcription...');
+      handleGenerateLiveQuestions();
+    }, 15000); // Generate every 15 seconds while transcribing
+
+    return () => clearInterval(interval);
+  }, [isTranscribing, encounterId]);
   const handleExtractFields = useCallback(async () => {
     const result = await extractFields(encounterId);
     setFields(result.fields);
   }, [encounterId]);
   const handleUpdateFields = useCallback(async (f: ExtractedFields) => {
-    await updateFields(encounterId, f);
-    setFields(f);
-  }, [encounterId]);
+    try {
+      await updateFields(encounterId, f);
+      setFields(f);
+      showSuccess("Fields updated successfully");
+    } catch (err) {
+      console.error("Failed to update fields:", err);
+      showError("Failed to update fields. Please try again.");
+    }
+  }, [encounterId, showError, showSuccess]);
   const handleGenerateDraftNote = useCallback(async () => {
     const result = await generateDraftNote(encounterId);
     setDraftNote(result.draftNote);
@@ -277,12 +386,109 @@ export default function EncounterPage() {
     try {
       const result = await getSmartClinicalAnalysis(encounterId);
       setClinicalFocus(result.clinicalFocus);
+      showSuccess("Clinical focus updated successfully");
     } catch (err) {
       console.error("Failed to get clinical focus:", err);
+      showError("Failed to refresh clinical focus. Please try again.");
     } finally {
       setIsLoadingClinicalFocus(false);
     }
+  }, [encounterId, showError, showSuccess]);
+
+  const handleGenerateReferralPdf = useCallback(async (specialistType: string) => {
+    setIsGeneratingReferralPdf(true);
+    try {
+      const result = await generateReferralPdf(encounterId, specialistType);
+      setReferralPdf({ pdfBase64: result.pdfBase64, content: result.referralContent });
+      // Switch to referral panel to show the PDF editor
+      setCurrentMode("referral");
+      showSuccess("Referral PDF generated successfully");
+    } catch (err) {
+      console.error("Failed to generate referral PDF:", err);
+      showError("Failed to generate referral PDF. Please try again.");
+    } finally {
+      setIsGeneratingReferralPdf(false);
+    }
+  }, [encounterId, showError, showSuccess]);
+
+  const handleSaveReferralPdf = useCallback(async (content: any) => {
+    try {
+      // Save updated content back to artifact
+      const { error } = await supabase
+        .from("artifacts")
+        .update({
+          content: {
+          ...content,
+          pdf_base64: referralPdf?.pdfBase64,
+        },
+      })
+      .eq("encounter_id", encounterId)
+      .eq("type", "referral_pdf");
+    
+      if (error) {
+        throw new Error("Failed to save referral PDF");
+      }
+      showSuccess("Referral PDF saved successfully");
+    } catch (err) {
+      console.error("Failed to save referral PDF:", err);
+      showError("Failed to save referral PDF. Please try again.");
+      throw err;
+    }
+  }, [encounterId, referralPdf, showError, showSuccess]);
+
+  const handleSendReferralPdf = useCallback(async (content: any) => {
+    // In a real implementation, this would send the PDF via email or API
+    console.log("Sending referral PDF:", content);
+    showSuccess("Referral PDF sent successfully! (This is a demo - in production, this would send via email/API)");
+  }, [showSuccess]);
+
+
+  const handleUpdateBillingCodes = useCallback(async (codes: any) => {
+    try {
+      await supabase
+        .from("artifacts")
+        .upsert({
+          encounter_id: encounterId,
+          type: "billing_codes",
+          content: codes,
+        }, { onConflict: "encounter_id,type" });
+      
+      setBillingCodes(codes);
+    } catch (err) {
+      console.error("Failed to update billing codes:", err);
+      throw err;
+    }
   }, [encounterId]);
+
+  const handleGenerateLiveQuestions = useCallback(async () => {
+    if (isGeneratingLiveQuestions) return; // Prevent concurrent calls
+    setIsGeneratingLiveQuestions(true);
+    try {
+      console.log('[AUTO] Generating live questions...');
+      const result = await generateLiveQuestions(encounterId);
+      console.log('[AUTO] Generated questions:', result.questions?.length);
+      setLiveQuestions(result.questions || []);
+      showSuccess("Live questions generated successfully");
+    } catch (err) {
+      console.error("Failed to generate live questions:", err);
+      showError("Failed to generate live questions. Please try again.");
+    } finally {
+      setIsGeneratingLiveQuestions(false);
+    }
+  }, [encounterId, isGeneratingLiveQuestions, showError, showSuccess]);
+
+  const handleUrgencyChange = useCallback(async (urgency: UrgencyLevel) => {
+    try {
+      await updateEncounterUrgency(encounterId, urgency);
+      // Update local state
+      setEncounter((prev) => prev ? { ...prev, urgency } : null);
+      showSuccess("Urgency level updated successfully");
+    } catch (err) {
+      console.error("Failed to update urgency:", err);
+      showError("Failed to update urgency level. Please try again.");
+      throw err;
+    }
+  }, [encounterId, showError, showSuccess]);
   const handleDownloadPdf = useCallback(async () => {
     const result = await getSummaryPdfUrl(encounterId);
     window.open(result.pdfUrl, "_blank");
@@ -331,12 +537,12 @@ export default function EncounterPage() {
   return (
     <div className="flex h-screen bg-white overflow-hidden font-sans text-ink-900">
       {/* Side Navigation */}
-      <Sidebar currentMode={currentMode} onModeChange={setCurrentMode} />
+      <Sidebar currentMode={currentMode} onModeChange={setCurrentMode} encounterId={encounterId} />
 
       {/* Main Container */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Unified Header */}
-        <EncounterHeader encounter={encounter} />
+        <EncounterHeader encounter={encounter} onUrgencyChange={handleUrgencyChange} />
 
         {/* Dynamic Action & Info Bar */}
         <div className="h-16 border-b border-surface-100 flex items-center justify-between px-8 bg-surface-50/50">
@@ -428,19 +634,62 @@ export default function EncounterPage() {
                   />
                 </div>
                 <div className="w-[320px] shrink-0 bg-surface-50/30">
-                  <RealtimeNotesPanel className="h-full" clinicalFocus={clinicalFocus} encounterId={encounterId} />
+                  <RealtimeNotesPanel 
+                    className="h-full" 
+                    clinicalFocus={clinicalFocus} 
+                    encounterId={encounterId} 
+                    liveQuestions={liveQuestions}
+                    templateQuestions={templateQuestions}
+                    onGenerateQuestions={handleGenerateLiveQuestions}
+                    isGeneratingQuestions={isGeneratingLiveQuestions}
+                  />
                 </div>
               </div>
             ) : currentMode === "fields" ? (
-              <FieldsPanel fields={fields} encounter={encounter} onExtract={handleExtractFields} onUpdate={handleUpdateFields} />
+              <FieldsPanel 
+                fields={fields} 
+                encounter={encounter} 
+                onExtract={handleExtractFields} 
+                onUpdate={handleUpdateFields}
+                customFields={templateCustomFields}
+              />
             ) : currentMode === "note" ? (
               <DraftNotePanel draftNote={draftNote} onGenerate={handleGenerateDraftNote} />
             ) : currentMode === "referral" ? (
-              <ReferralPanel providers={providers} referrals={referrals} onSearch={handleSearchReferrals} onApprove={handleApproveReferral} recommendedSpecialist={encounter.recommended_specialist} />
+              referralPdf ? (
+                <ReferralPdfEditor
+                  pdfBase64={referralPdf.pdfBase64}
+                  referralContent={referralPdf.content}
+                  encounterId={encounterId}
+                  onSave={handleSaveReferralPdf}
+                  onSend={handleSendReferralPdf}
+                  onClose={() => setReferralPdf(null)}
+                />
+              ) : (
+                <ReferralPanel 
+                  providers={providers} 
+                  referrals={referrals} 
+                  onSearch={handleSearchReferrals} 
+                  onApprove={handleApproveReferral} 
+                  recommendedSpecialist={encounter.recommended_specialist}
+                  encounterId={encounterId}
+                  onGenerateReferralPdf={handleGenerateReferralPdf}
+                  isGeneratingPdf={isGeneratingReferralPdf}
+                />
+              )
             ) : currentMode === "clinical-focus" ? (
               <ClinicalFocusPanel clinicalFocus={clinicalFocus} onRefresh={handleRefreshClinicalFocus} isLoading={isLoadingClinicalFocus} />
             ) : (
-              <SummaryPanel summary={summary} diagnosis={diagnosis} billingCodes={billingCodes} onGenerate={handleGenerateSummary} onGenerateDiagnosis={handleGenerateDiagnosis} onDownloadPdf={handleDownloadPdf} onNarrate={handleNarrate} isGeneratingDiagnosis={false} />
+              <SummaryPanel 
+                summary={summary} 
+                diagnosis={diagnosis} 
+                billingCodes={billingCodes} 
+                onGenerate={handleGenerateSummary} 
+                onGenerateDiagnosis={handleGenerateDiagnosis} 
+                onDownloadPdf={handleDownloadPdf} 
+                onNarrate={handleNarrate} 
+                isGeneratingDiagnosis={false}
+              />
             )}
           </div>
         </main>
