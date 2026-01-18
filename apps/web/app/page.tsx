@@ -80,27 +80,27 @@ export default function HomePage() {
         isScrolled ? "pt-4" : "pt-8"
       )}>
         <div className={cn(
-          "max-w-5xl w-full flex items-center justify-between px-6 py-3 rounded-full transition-all duration-500",
+          "max-w-5xl w-full flex items-center justify-between px-8 py-4 rounded-full transition-all duration-500",
           isScrolled 
-            ? "bg-white/80 backdrop-blur-2xl border border-surface-200/50 shadow-soft-xl" 
+            ? "bg-white/80 backdrop-blur-2xl border border-surface-200/50 shadow-2xl" 
             : "bg-transparent border border-transparent"
         )}>
           <Link href="/" className="flex items-center gap-2 relative z-10">
-            <Image src={logo} alt="Echo Health" width={110} height={32} className="h-7 w-auto" priority />
+            <Image src={logo} alt="Echo Health" width={110} height={32} className="h-9 w-auto" priority />
           </Link>
           
           <div className="hidden md:flex items-center gap-8">
-            <Link href="#how-it-works" className="text-[11px] font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors">Technology</Link>
-            <Link href="/dashboard" className="text-[11px] font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors flex items-center gap-2">
-              <Lock className="w-3 h-3" />
+            <Link href="#how-it-works" className="text-sm font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors">Technology</Link>
+            <Link href="/get-started" className="text-sm font-black text-ink-400 hover:text-primary-600 uppercase tracking-widest transition-colors flex items-center gap-2">
+              <Lock className="w-4 h-4" />
               Portal
             </Link>
           </div>
 
           <div className="flex items-center gap-4">
             <Link 
-              href="/dashboard" 
-              className="px-6 py-2 bg-ink-950 text-white rounded-full font-black text-[11px] uppercase tracking-widest shadow-soft hover:bg-primary-600 hover:-translate-y-0.5 transition-all"
+              href="/get-started" 
+              className="px-6 py-2 bg-ink-950 text-white rounded-full font-black text-sm uppercase tracking-widest shadow-soft hover:bg-primary-600 hover:-translate-y-0.5 transition-all"
             >
               Get Started
             </Link>
