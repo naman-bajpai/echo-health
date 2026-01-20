@@ -59,3 +59,15 @@ export DEEPGRAM_API_KEY=your-key
 # Deploy
 lk agent create
 ```
+
+## Known Issues
+
+### KeyboardInterrupt Errors During Startup
+
+If you see `KeyboardInterrupt` errors in the logs during agent startup (especially related to `av`, `propcache`, or multiprocessing), these are **expected and non-fatal**. They occur when worker processes are interrupted during import of C extensions (PyAV). The agent will eventually start successfully - look for the "registered worker" message in the logs. This is a known issue with Python 3.13 and heavy C extensions in multiprocessing contexts.
+
+The code includes a workaround that sets the multiprocessing start method to 'fork' to minimize these errors.
+
+### KeyError in track_publications
+
+If you see `KeyError: 'TR_...'` errors related to `track_publications` in the logs, these are **expected and non-fatal**. They occur due to a race condition in LiveKit when tracks are published/unpublished rapidly. The agent continues to function normally - these errors are caught and handled internally. This is a known issue with LiveKit's internal event handling and doesn't affect transcription functionality.

@@ -9,8 +9,25 @@ import logging
 import asyncio
 import json
 import re
+import multiprocessing
 from pathlib import Path
 from dotenv import load_dotenv
+
+# Set multiprocessing start method early to avoid issues with PyAV imports
+# Using 'fork' on macOS/Linux avoids re-importing modules in child processes,
+# which can prevent KeyboardInterrupt errors during worker process spawn
+# Note: These errors are non-fatal - the worker will eventually start successfully
+try:
+    # Try fork first (faster, avoids re-imports)
+    multiprocessing.set_start_method('fork', force=True)
+except (RuntimeError, ValueError):
+    # Fallback to spawn if fork is not available (e.g., on Windows)
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # Already set, ignore
+        pass
+
 from livekit.agents import JobContext, WorkerOptions, cli, metrics
 from livekit.agents.voice import Agent, AgentSession, MetricsCollectedEvent
 from livekit.agents.llm import ChatContext, ChatMessage
@@ -238,6 +255,25 @@ async def entrypoint(ctx: JobContext):
     """Entry point for the Echo Health transcription and note generation agent"""
     setup_langfuse()  # set up the langfuse tracer if configured
 
+    # Set up exception handler for unhandled exceptions in async tasks
+    def handle_exception(loop, context):
+        """Handle unhandled exceptions in async tasks"""
+        exception = context.get('exception')
+        if exception:
+            # Suppress known race condition errors in LiveKit track publications
+            if isinstance(exception, KeyError) and 'track_publications' in str(exception):
+                logger.debug(f"Ignoring track publication race condition: {exception}")
+                return
+            # Log other exceptions
+            logger.error(f"Unhandled exception in async task: {exception}", exc_info=exception)
+        else:
+            # Log other context errors
+            logger.error(f"Unhandled error in async task: {context}")
+    
+    # Set the exception handler for the current event loop
+    loop = asyncio.get_event_loop()
+    loop.set_exception_handler(handle_exception)
+
     session = AgentSession()
 
     # Create the agent with Deepgram STT
@@ -246,7 +282,7 @@ async def entrypoint(ctx: JobContext):
             You are a medical transcription and note-taking assistant for Echo Health.
             Your role is to transcribe conversations and generate structured medical notes in real-time.
         """,
-        stt=deepgram.STTv2(eager_eot_threshold=0.5),
+        stt=deepgram.STT(model="nova-2-general"),
         vad=silero.VAD.load()
     )
 
@@ -255,56 +291,69 @@ async def entrypoint(ctx: JobContext):
 
     @session.on("user_input_transcribed")
     def on_transcript(transcript):
-        logger.info(f"Transcript received: {transcript}")
-        fragment = transcript.transcript.strip()
-        if not fragment:
-            return
+        try:
+            logger.info(f"Transcript received: {transcript}")
+            fragment = transcript.transcript.strip()
+            if not fragment:
+                return
 
-        if transcript.is_final:
-            health_assistant.transcriptions.append(fragment)
-            if health_assistant.full_transcript:
-                health_assistant.full_transcript = f"{health_assistant.full_transcript} {fragment}"
+            if transcript.is_final:
+                health_assistant.transcriptions.append(fragment)
+                if health_assistant.full_transcript:
+                    health_assistant.full_transcript = f"{health_assistant.full_transcript} {fragment}"
+                else:
+                    health_assistant.full_transcript = fragment
+
+                display_text = health_assistant.build_display_transcript()
+                asyncio.create_task(
+                    health_assistant.send_transcription_to_frontend(display_text)
+                )
+
+                logger.info(f"Transcript updated: {fragment}")
+
+                # Cancel previous note update task if still running
+                if health_assistant.note_update_task and not health_assistant.note_update_task.done():
+                    health_assistant.note_update_task.cancel()
+
+                # Start new note update task
+                health_assistant.note_update_task = asyncio.create_task(
+                    health_assistant.update_notes(health_assistant.full_transcript)
+                )
             else:
-                health_assistant.full_transcript = fragment
-
-            display_text = health_assistant.build_display_transcript()
-            asyncio.create_task(
-                health_assistant.send_transcription_to_frontend(display_text)
-            )
-
-            logger.info(f"Transcript updated: {fragment}")
-
-            # Cancel previous note update task if still running
-            if health_assistant.note_update_task and not health_assistant.note_update_task.done():
-                health_assistant.note_update_task.cancel()
-
-            # Start new note update task
-            health_assistant.note_update_task = asyncio.create_task(
-                health_assistant.update_notes(health_assistant.full_transcript)
-            )
-        else:
-            # Interim transcription - send to frontend for live display
-            display_text = health_assistant.build_display_transcript(partial=fragment)
-            asyncio.create_task(
-                health_assistant.send_transcription_to_frontend(display_text)
-            )
+                # Interim transcription - send to frontend for live display
+                display_text = health_assistant.build_display_transcript(partial=fragment)
+                asyncio.create_task(
+                    health_assistant.send_transcription_to_frontend(display_text)
+                )
+        except Exception as e:
+            logger.error(f"Error in transcript handler: {e}", exc_info=True)
 
     @session.on("metrics_collected")
     def _on_metrics_collected(ev: MetricsCollectedEvent):
-        usage_collector.collect(ev.metrics)
+        try:
+            usage_collector.collect(ev.metrics)
+        except Exception as e:
+            logger.error(f"Error collecting metrics: {e}")
 
     async def log_usage():
-        summary = usage_collector.get_summary()
-        logger.info(f"Usage: {summary}")
+        try:
+            summary = usage_collector.get_summary()
+            logger.info(f"Usage: {summary}")
+        except Exception as e:
+            logger.error(f"Error logging usage: {e}")
 
     logger.info("Echo Health assistant started. Listening for transcriptions...")
 
-    await session.start(
-        agent=agent,
-        room=ctx.room
-    )
-
-    ctx.add_shutdown_callback(log_usage)
+    try:
+        await session.start(
+            agent=agent,
+            room=ctx.room
+        )
+    except Exception as e:
+        logger.error(f"Error starting session: {e}", exc_info=True)
+        raise
+    finally:
+        ctx.add_shutdown_callback(log_usage)
 
 
 if __name__ == "__main__":
