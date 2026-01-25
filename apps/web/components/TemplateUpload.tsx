@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, Sparkles } from "lucide-react";
+import { Upload, FileText, X, Loader2, CheckCircle2, AlertCircle, Sparkles, ChevronDown, ChevronUp, ListChecks } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 
 interface TemplateUploadProps {
@@ -39,6 +39,9 @@ export default function TemplateUpload({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [customFields, setCustomFields] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [uploadedTemplateId, setUploadedTemplateId] = useState<string | null>(null);
 
   const handleFileSelect = async (file: File) => {
     setSelectedFile(file);
@@ -46,13 +49,20 @@ export default function TemplateUpload({
     setUploadError(null);
     setUploadSuccess(false);
 
-    // Extract text from file (only TXT files for now)
+    // Extract text from file
     try {
       if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+        // For TXT files, extract text directly
         const text = await file.text();
         setExtractedText(text);
+      } else if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+        // For PDF files, we'll send the file to backend for extraction
+        setExtractedText(""); // Will be extracted on backend
+      } else if (file.name.endsWith(".docx") || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        // For DOCX files, we'll send the file to backend for extraction
+        setExtractedText(""); // Will be extracted on backend
       } else {
-        setUploadError("Please upload a TXT file, or paste the template content below.");
+        setUploadError("Unsupported file type. Please upload PDF, DOCX, or TXT file.");
         setSelectedFile(null);
       }
     } catch (error) {
@@ -77,13 +87,31 @@ export default function TemplateUpload({
     setUploadSuccess(false);
 
     try {
-      // Use extracted text or read from file
+      // Prepare file data for PDF/DOCX files
+      let fileData: string | undefined;
+      let fileName: string | undefined;
       let templateContent = extractedText;
-      if (!templateContent && selectedFile) {
-        templateContent = await selectedFile.text();
+      
+      if (selectedFile) {
+        const fileExtension = selectedFile.name.split(".").pop()?.toLowerCase();
+        const isPdf = fileExtension === "pdf" || selectedFile.type === "application/pdf";
+        const isDocx = fileExtension === "docx" || selectedFile.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        
+        if (isPdf || isDocx) {
+          // Convert file to base64 for PDF/DOCX
+          const arrayBuffer = await selectedFile.arrayBuffer();
+          const base64 = btoa(String.fromCharCode(...Array.from(new Uint8Array(arrayBuffer)))); 
+          fileData = base64;
+          fileName = selectedFile.name;
+        } else if (fileExtension === "txt" || selectedFile.type === "text/plain") {
+          // For TXT files, use text content directly
+          if (!templateContent) {
+            templateContent = await selectedFile.text();
+          }
+        }
       }
 
-      if (!templateContent.trim()) {
+      if (!templateContent && !fileData) {
         throw new Error("Template content is empty");
       }
 
@@ -95,7 +123,9 @@ export default function TemplateUpload({
         },
         body: JSON.stringify({
           templateName,
-          templateContent,
+          templateContent: templateContent || undefined,
+          fileData,
+          fileName,
           fileType: selectedFile?.type || selectedFile?.name.split(".").pop() || "txt",
           customFields: customFields.trim() || undefined,
         }),
@@ -107,9 +137,13 @@ export default function TemplateUpload({
       }
 
       const result = await response.json();
+      const questions = result.questions || [];
+      setGeneratedQuestions(questions);
+      setUploadedTemplateId(result.template.id);
       setUploadSuccess(true);
-      showSuccess("Template uploaded successfully");
-      onTemplateUploaded(result.template.id, result.questions || []);
+      setShowQuestions(true); // Auto-expand questions section
+      showSuccess(`Template uploaded successfully! Generated ${questions.length} questions.`);
+      onTemplateUploaded(result.template.id, questions);
     } catch (error: any) {
       console.error("Upload error:", error);
       const errorMsg = error.message || "Failed to upload template";
@@ -143,8 +177,12 @@ export default function TemplateUpload({
       }
 
       const result = await response.json();
-      showSuccess("Questions generated successfully");
-      onTemplateSelected(templateId, result.questions || []);
+      const questions = result.questions || [];
+      setGeneratedQuestions(questions);
+      setUploadedTemplateId(templateId);
+      setShowQuestions(true); // Auto-expand questions section
+      showSuccess(`Questions generated successfully! Generated ${questions.length} questions.`);
+      onTemplateSelected(templateId, questions);
     } catch (error: any) {
       console.error("Generate questions error:", error);
       const errorMsg = error.message || "Failed to generate questions";
@@ -241,6 +279,9 @@ export default function TemplateUpload({
                       setSelectedFile(null);
                       setExtractedText("");
                       setTemplateName("");
+                      setGeneratedQuestions([]);
+                      setShowQuestions(false);
+                      setUploadedTemplateId(null);
                     }}
                     className="ml-auto p-2 hover:bg-red-50 rounded-lg transition-colors"
                   >
@@ -327,7 +368,82 @@ Or JSON:
           {uploadSuccess && (
             <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-600 text-sm">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <p>Template uploaded and questions generated successfully!</p>
+              <p>Template uploaded and {generatedQuestions.length} questions generated successfully!</p>
+            </div>
+          )}
+
+          {/* Generated Questions Display */}
+          {generatedQuestions.length > 0 && (
+            <div className="border border-surface-200 rounded-2xl overflow-hidden">
+              <button
+                onClick={() => setShowQuestions(!showQuestions)}
+                className="w-full flex items-center justify-between p-4 bg-primary-50 hover:bg-primary-100 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary-500 flex items-center justify-center">
+                    <ListChecks className="w-5 h-5 text-white" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-ink-900">
+                      Generated Questions ({generatedQuestions.length})
+                    </p>
+                    <p className="text-xs text-ink-500">
+                      Click to {showQuestions ? "hide" : "view"} questions
+                    </p>
+                  </div>
+                </div>
+                {showQuestions ? (
+                  <ChevronUp className="w-5 h-5 text-primary-600" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-primary-600" />
+                )}
+              </button>
+
+              {showQuestions && (
+                <div className="p-4 bg-white max-h-96 overflow-y-auto space-y-3">
+                  {/* Group questions by category */}
+                  {Object.entries(
+                    generatedQuestions.reduce((acc, q) => {
+                      const category = q.category || "other";
+                      if (!acc[category]) acc[category] = [];
+                      acc[category].push(q);
+                      return acc;
+                    }, {} as Record<string, Question[]>)
+                  ).map(([category, questions]) => (
+                    <div key={category} className="space-y-2">
+                      <h5 className="text-xs font-bold text-ink-400 uppercase tracking-wider">
+                        {category.replace(/_/g, " ")}
+                      </h5>
+                      <div className="space-y-2">
+                        {questions.map((q, idx) => (
+                          <div
+                            key={q.id || idx}
+                            className="flex items-start gap-3 p-3 bg-surface-50 rounded-xl border border-surface-200"
+                          >
+                            <div className={`flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold ${
+                              q.required
+                                ? "bg-red-100 text-red-700 border border-red-200"
+                                : "bg-surface-200 text-ink-500"
+                            }`}>
+                              {q.required ? "!" : "?"}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-ink-900">
+                                {q.question}
+                              </p>
+                              {q.field_mapping && (
+                                <p className="text-xs text-ink-400 mt-1">
+                                  Maps to: <span className="font-mono">{q.field_mapping}</span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

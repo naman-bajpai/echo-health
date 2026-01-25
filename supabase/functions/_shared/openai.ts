@@ -92,6 +92,8 @@ export async function callOpenAIJSON<T>(
   options: {
     model?: string;
     systemPrompt?: string;
+    temperature?: number;
+    maxTokens?: number;
   } = {}
 ): Promise<T | null> {
   const response = await callOpenAI(prompt, {

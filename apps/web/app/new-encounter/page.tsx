@@ -29,6 +29,9 @@ import {
   History,
   Sparkles,
   Building2,
+  ListChecks,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import type { Patient } from "@/lib/types";
 
@@ -60,6 +63,7 @@ export default function NewEncounterPage() {
   const [generatedQuestions, setGeneratedQuestions] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [showQuestionsPreview, setShowQuestionsPreview] = useState(true);
 
   // Load templates on mount
   useEffect(() => {
@@ -534,6 +538,81 @@ export default function NewEncounterPage() {
                 ))}
               </div>
             </section>
+
+            {/* Generated Questions Preview */}
+            {generatedQuestions.length > 0 && (
+              <section className="bg-white rounded-[2.5rem] border border-surface-200 shadow-soft-xl overflow-hidden animate-fade-in">
+                <button
+                  onClick={() => setShowQuestionsPreview(!showQuestionsPreview)}
+                  className="w-full flex items-center justify-between p-6 bg-primary-50 hover:bg-primary-100 transition-colors"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-primary-500 flex items-center justify-center">
+                      <ListChecks className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-ink-900 text-lg">
+                        Generated Questions ({generatedQuestions.length})
+                      </p>
+                      <p className="text-xs text-ink-500">
+                        Review questions that will guide your conversation
+                      </p>
+                    </div>
+                  </div>
+                  {showQuestionsPreview ? (
+                    <ChevronUp className="w-5 h-5 text-primary-600" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-primary-600" />
+                  )}
+                </button>
+
+                {showQuestionsPreview && (
+                  <div className="p-6 bg-white max-h-96 overflow-y-auto space-y-4">
+                    {/* Group questions by category */}
+                    {(Object.entries(
+                      generatedQuestions.reduce((acc, q) => {
+                        const category = q.category || "other";
+                        if (!acc[category]) acc[category] = [];
+                        acc[category].push(q);
+                        return acc;
+                      }, {} as Record<string, any[]>)
+                    ) as [string, any[]][]).map(([category, questions]) => (
+                      <div key={category} className="space-y-3">
+                        <h5 className="text-xs font-bold text-ink-400 uppercase tracking-wider">
+                          {category.replace(/_/g, " ")}
+                        </h5>
+                        <div className="space-y-2">
+                          {questions.map((q, idx) => (
+                            <div
+                              key={q.id || idx}
+                              className="flex items-start gap-3 p-4 bg-surface-50 rounded-xl border border-surface-200"
+                            >
+                              <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold ${
+                                q.required
+                                  ? "bg-red-100 text-red-700 border border-red-200"
+                                  : "bg-surface-200 text-ink-500"
+                              }`}>
+                                {q.required ? "!" : "?"}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-ink-900">
+                                  {q.question}
+                                </p>
+                                {q.field_mapping && (
+                                  <p className="text-xs text-ink-400 mt-1">
+                                    Maps to: <span className="font-mono">{q.field_mapping}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             <button
               onClick={handleStartEncounter}

@@ -5,6 +5,12 @@ import { handleCors, jsonResponse, errorResponse } from "../_shared/cors.ts";
 import supabaseAdmin from "../_shared/supabaseAdmin.ts";
 import { callOpenAIJSON, isConfigured as isOpenAIConfigured } from "../_shared/openai.ts";
 
+// PDF extraction library for Deno/serverless
+import { getDocument } from "npm:pdfjs-serverless@0.3.2"; 
+
+// DOCX extraction library
+import mammoth from "npm:mammoth@1.6.0"; 
+
 interface UploadTemplateRequest {
   templateName: string;
   templateContent: string; // Extracted text from the template
@@ -46,18 +52,42 @@ serve(async (req: Request) => {
     }
 
     // If we have fileData but no templateContent, we need to extract text
-    // For now, we'll use the templateContent if provided, or use a placeholder
     let finalTemplateContent = templateContent;
     
     if (!finalTemplateContent && fileData) {
-      // For PDF/DOCX, we would need a library to extract text
-      // For now, we'll return an error asking for text content
-      // In production, you'd use a library like pdf-parse or mammoth
-      return errorResponse("Text extraction from PDF/DOCX files requires server-side processing. Please provide templateContent or use a TXT file.");
+      try {
+        // Decode base64 file data
+        const fileBytes = Uint8Array.from(atob(fileData), c => c.charCodeAt(0));
+        
+        // Determine file type from fileName or fileType
+        const fileExtension = fileName?.split(".").pop()?.toLowerCase() || 
+                             fileType?.split("/").pop()?.toLowerCase() || "";
+        
+        if (fileExtension === "pdf" || fileType === "application/pdf") {
+          // Extract text from PDF
+          console.log("Extracting text from PDF...");
+          finalTemplateContent = await extractTextFromPdf(fileBytes);
+        } else if (fileExtension === "docx" || fileType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          // Extract text from DOCX
+          console.log("Extracting text from DOCX...");
+          finalTemplateContent = await extractTextFromDocx(fileBytes);
+        } else {
+          return errorResponse(`Unsupported file type: ${fileExtension}. Please upload PDF, DOCX, or TXT file.`);
+        }
+        
+        if (!finalTemplateContent || finalTemplateContent.trim().length === 0) {
+          return errorResponse("Failed to extract text from file. The file may be empty or corrupted.");
+        }
+        
+        console.log(`Successfully extracted ${finalTemplateContent.length} characters from ${fileExtension.toUpperCase()} file`);
+      } catch (error) {
+        console.error("Error extracting text from file:", error);
+        return errorResponse(`Failed to extract text from file: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     
     if (!finalTemplateContent) {
-      return errorResponse("templateContent is required. Please provide the template text or upload a TXT file.");
+      return errorResponse("templateContent is required. Please provide the template text or upload a PDF, DOCX, or TXT file.");
     }
 
     // Get user ID from auth header (optional for demo mode)
@@ -164,7 +194,7 @@ Return JSON:
       try {
         const customQuestionsResult = await callOpenAIJSON<{ questions: Question[] }>(customFieldsPrompt, {
           systemPrompt: "You are a medical intake assistant. Generate patient-friendly questions for custom EHR fields. Always return valid JSON only.",
-          maxTokens: 2000,
+          model: "gpt-4o-mini",
         });
 
         if (customQuestionsResult && customQuestionsResult.questions) {
@@ -221,7 +251,7 @@ Respond with JSON only:
 
       const result = await callOpenAIJSON<{ questions: Question[] }>(prompt, {
         systemPrompt: "You are a medical intake specialist. Generate comprehensive, patient-friendly questions based on EHR templates. Always return valid JSON only.",
-        maxTokens: 3000,
+        model: "gpt-4o-mini",
       });
 
       if (result && result.questions) {
@@ -250,6 +280,44 @@ Respond with JSON only:
     return errorResponse(`Internal server error: ${error}`, 500);
   }
 });
+
+/**
+ * Extract text from PDF file
+ */
+async function extractTextFromPdf(pdfBytes: Uint8Array): Promise<string> {
+  try {
+    const pdf = await getDocument({ data: pdfBytes }).promise;
+    const numPages = pdf.numPages;
+    const textParts: string[] = [];
+
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(" ");
+      textParts.push(pageText);
+    }
+
+    return textParts.join("\n\n");
+  } catch (error) {
+    console.error("PDF extraction error:", error);
+    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Extract text from DOCX file
+ */
+async function extractTextFromDocx(docxBytes: Uint8Array): Promise<string> {
+  try {
+    const result = await mammoth.extractRawText({ buffer: docxBytes });
+    return result.value;
+  } catch (error) {
+    console.error("DOCX extraction error:", error);
+    throw new Error(`Failed to extract text from DOCX: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
 
 function createDefaultQuestions(): Question[] {
   return [
