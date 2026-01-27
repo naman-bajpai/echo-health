@@ -31,6 +31,7 @@ import {
 export default function ClinicianProfilePage() {
   const router = useRouter();
   const { user, isLoading: authLoading, signOut } = useAuth();
+  const { showSuccess, showError } = useToast();
   const [stats, setStats] = useState({ totalEncounters: 0, patientCount: 0 });
   const [isEditing, setIsEditing] = useState(false);
   const [editUser, setEditUser] = useState<any>({});

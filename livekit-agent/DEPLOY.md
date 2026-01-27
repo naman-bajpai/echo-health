@@ -38,9 +38,17 @@ python agent.py dev
 
 From the `livekit-agent` directory:
 
-```bash
-lk agent create
-```
+1. **Set default project** (if you have multiple projects):
+   ```bash
+   lk project set-default echo-health
+   ```
+
+2. **Create or deploy**:
+   ```bash
+   lk agent create   # first-time only
+   # or
+   lk agent deploy   # redeploy existing agent
+   ```
 
 This will:
 1. Create `Dockerfile` (if not exists)
@@ -66,7 +74,9 @@ This will:
 
 ### Agent not deploying
 - Check you're in the `livekit-agent` directory
-- Verify `lk cloud auth` worked
+- Verify `lk cloud auth` worked (run it, complete browser flow, pick the correct project)
+- Set default project: `lk project set-default echo-health` (use your project name from `lk project list`)
+- **401 "unable to get client settings"**: Upgrade CLI (`brew update && brew upgrade livekit-cli`), then run `lk cloud auth` again and pick the project that matches your LiveKit URL (`echo-health-a3cjlckg`). Ensure you're signed into the correct LiveKit Cloud team in the browser.
 - Check Docker is running (if building locally)
 
 ### No transcription
